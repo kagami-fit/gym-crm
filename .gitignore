@@ -1,0 +1,12 @@
+node_modules
+.next
+.data
+.env
+.env*.local
+*.tsbuildinfo
+next-env.d.ts
+coverage
+.vercel
+.netlify
+*.log
+.DS_Store

@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ログイン（Better Auth の標準テーブル）
+// ─────────────────────────────────────────────
+
+model User {
+  id            String            @id
+  name          String
+  email         String            @unique
+  emailVerified Boolean           @default(false)
+  image         String?
+  /// owner: 設定・スタッフ管理まで可能 / staff: 顧客の閲覧・記録
+  role          String            @default("staff")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @default(now()) @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  clients       Client[]
+  trainings     TrainingSession[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ─────────────────────────────────────────────
+// 顧客台帳
+// ─────────────────────────────────────────────
+
+model Client {
+  id                String            @id @default(cuid())
+  /// 会員番号（任意・重複不可）
+  memberNo          String?           @unique
+  name              String
+  kana              String?
+  /// male / female / other
+  gender            String?
+  birthDate         DateTime?         @db.Date
+  heightCm          Float?
+  phone             String?
+  email             String?
+  address           String?
+  emergencyName     String?
+  emergencyRelation String?
+  emergencyPhone    String?
+  occupation        String?
+  /// trial（体験）/ active（在籍中）/ paused（休会中）/ left（退会）
+  status            String            @default("active")
+  joinedOn          DateTime?         @db.Date
+  leftOn            DateTime?         @db.Date
+  trainerId         String?
+  trainer           User?             @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+  /// 来店のきっかけ（紹介・SNS など）
+  referral          String?
+  /// 目的（ダイエット・ボディメイク など、複数）
+  purposes          String[]          @default([])
+  note              String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  bodyLogs          BodyLog[]
+  goals             Goal[]
+  mealMemos         MealMemo[]
+  sessions          TrainingSession[]
+  questionnaire     Questionnaire?
+
+  @@index([status])
+  @@index([kana])
+}
+
+/// 体重・体脂肪率（1日1件。ヒアリングでトレーナーが入力）
+model BodyLog {
+  id         String   @id @default(cuid())
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  date       DateTime @db.Date
+  weightKg   Float?
+  bodyFatPct Float?
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([clientId, date])
+}
+
+/// 目標（変更のたびに1件追加して履歴にする。開始日が基準日以前で最新のものが有効）
+model Goal {
+  id              String   @id @default(cuid())
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  startDate       DateTime @db.Date
+  startWeightKg   Float?
+  startBodyFatPct Float?
+  targetWeightKg  Float
+  /// 設定の減量ペース（paces[].key）
+  paceKey         String
+  activityFactor  Float
+  note            String?
+  createdById     String?
+  createdAt       DateTime @default(now())
+
+  @@index([clientId, startDate])
+}
+
+/// 食事メモ（slot: breakfast / lunch / dinner / snack / note）
+model MealMemo {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  slot      String
+  text      String
+  updatedAt DateTime @updatedAt
+
+  @@unique([clientId, date, slot])
+}
+
+// ─────────────────────────────────────────────
+// トレーニング
+// ─────────────────────────────────────────────
+
+/// 来店1回分のトレーニング（この日付が「来店日」になる）
+model TrainingSession {
+  id        String        @id @default(cuid())
+  clientId  String
+  client    Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  date      DateTime      @db.Date
+  trainerId String?
+  trainer   User?         @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+  memo      String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  sets      TrainingSet[]
+  drawing   SessionDrawing?
+
+  @@index([clientId, date])
+}
+
+/// セッションごとの手書きメモ（Apple Pencil・指で書いた線をベクターで保存。形式は lib/drawing.ts）
+model SessionDrawing {
+  id          String          @id @default(cuid())
+  sessionId   String          @unique
+  session     TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  data        Json
+  updatedById String?
+  updatedAt   DateTime        @updatedAt
+}
+
+/// 種目ごとの記録（1行＝重さ×回数×セット数）
+model TrainingSet {
+  id        String          @id @default(cuid())
+  sessionId String
+  session   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  order     Int
+  bodyPart  String
+  exercise  String
+  weightKg  Float
+  reps      Int
+  sets      Int
+  note      String?
+
+  @@index([sessionId])
+  @@index([exercise])
+}
+
+/// 種目マスタ
+model Exercise {
+  id        String  @id @default(cuid())
+  bodyPart  String
+  name      String
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  @@unique([bodyPart, name])
+}
+
+// ─────────────────────────────────────────────
+// 問診票・設定
+// ─────────────────────────────────────────────
+
+/// 問診票（項目の定義は lib/questionnaire.ts。回答はJSONで持つので項目の追加・変更がしやすい）
+model Questionnaire {
+  id          String    @id @default(cuid())
+  clientId    String    @unique
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  answeredOn  DateTime? @db.Date
+  answers     Json
+  updatedById String?
+  updatedAt   DateTime  @updatedAt
+}
+
+/// アプリ設定（key: "calc" に計算設定一式を JSON で保存）
+model AppSetting {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}

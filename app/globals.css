@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* Resole（resole.jp）の配色：黄色 #FFD00B・クリーム #FBF8ED・濃いグレー。
+   見出し帯とラベルは参考シートの「濃い帯＋ラベル」の整理をチャコールで踏襲。
+   グラフの色は dataviz の検証を通したもの（白背景でコントラスト3:1以上・色覚の多様性OK） */
+@theme {
+  --font-sans: var(--nf-noto), "Hiragino Kaku Gothic ProN", "Hiragino Sans", sans-serif;
+  --font-num: var(--nf-mont), var(--nf-noto), sans-serif;
+
+  --color-ink: #2f2d27;
+  --color-ink-2: #5e5a50;
+  --color-ink-3: #8c877a;
+  --color-line: #ebe5d3;
+  --color-line-2: #d9d0b8;
+  --color-page: #fbf8ed;
+  --color-soft: #f8f4e7;
+
+  --color-dark: #2f2d27;
+  --color-dark-2: #48443a;
+  --color-dark-3: #6a6456;
+  --color-tint: #fff7d6;
+
+  --color-brand: #ffd00b;
+  --color-brand-deep: #f2c400;
+  --color-brand-2: #fbaf00;
+  --color-brand-soft: #fff4bf;
+  --color-brand-ink: #8a6400;
+  --color-gold: #c98500;
+
+  --color-danger: #c0392b;
+  --color-danger-soft: #fdecea;
+  --color-ok: #1f7a45;
+  --color-ok-soft: #e6f4ea;
+  --color-warn: #9a5200;
+  --color-warn-soft: #fff1d6;
+
+  --color-series-1: #c98500;
+  --color-series-2: #2a78d6;
+  --color-series-3: #1baf7a;
+  --color-grid: #ece6d6;
+}
+
+@layer base {
+  html { color-scheme: light; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  /* iPad：ダブルタップで拡大されない・タップ時の灰色の四角を出さない */
+  a, button, input, select, textarea, summary, label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  button:not(:disabled), [role="button"]:not(:disabled), summary { cursor: pointer; }
+  input, textarea, select { font-size: 16px; }
+  .num { font-family: var(--font-num); font-variant-numeric: normal; letter-spacing: 0.01em; }
+  .en { font-family: var(--font-num); font-style: italic; font-weight: 600; letter-spacing: 0.02em; }
+  .tnum { font-variant-numeric: tabular-nums; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+@media print {
+  aside, .no-print { display: none !important; }
+  body { background: #fff; }
+}
