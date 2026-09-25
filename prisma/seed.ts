@@ -36,7 +36,8 @@ async function seedExercises() {
 async function seedDevOwner(): Promise<string | null> {
   const email = process.env.DEV_OWNER_EMAIL
   const password = process.env.DEV_OWNER_PASSWORD
-  if (process.env.DEV_LOGIN !== 'true' || !email || !password) return null
+  // 公開先のDBに投入するとき（npm run prod:seed は NODE_ENV=production）は作らない
+  if (process.env.NODE_ENV === 'production' || process.env.DEV_LOGIN !== 'true' || !email || !password) return null
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) return existing.id
   const id = crypto.randomUUID()
@@ -51,6 +52,33 @@ async function seedDevOwner(): Promise<string | null> {
     },
   })
   console.log(`dev owner: ${email}`)
+  return id
+}
+
+/** 公開デモ（DEMO_MODE=true）で「デモを見る」から入るアカウント。スタッフ権限（設定の変更はできない） */
+async function seedDemoUser(): Promise<string | null> {
+  const email = process.env.DEMO_USER_EMAIL
+  const password = process.env.DEMO_USER_PASSWORD
+  if (process.env.DEMO_MODE !== 'true' || !email || !password) return null
+  const hash = await hashPassword(password)
+  const existing = await prisma.user.findUnique({ where: { email } })
+  if (existing) {
+    await prisma.user.update({ where: { id: existing.id }, data: { role: 'staff' } })
+    await prisma.account.updateMany({ where: { userId: existing.id, providerId: 'credential' }, data: { password: hash } })
+    return existing.id
+  }
+  const id = crypto.randomUUID()
+  await prisma.user.create({
+    data: {
+      id,
+      email,
+      name: 'デモ トレーナー',
+      role: 'staff',
+      emailVerified: true,
+      accounts: { create: { id: crypto.randomUUID(), accountId: id, providerId: 'credential', password: hash } },
+    },
+  })
+  console.log(`demo user: ${email}`)
   return id
 }
 
@@ -377,7 +405,8 @@ async function main() {
   await seedSettings()
   await seedExercises()
   const ownerId = await seedDevOwner()
-  await seedDemo(ownerId)
+  const demoUserId = await seedDemoUser()
+  await seedDemo(ownerId ?? demoUserId)
 }
 
 main()

@@ -1,0 +1,9 @@
+# Netlify の公開設定（Next.js は Netlify が自動で対応する）
+[build]
+  command = "npx prisma generate && npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Prisma の CLI が送る利用状況の送信を止める
+  CHECKPOINT_DISABLE = "1"

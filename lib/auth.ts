@@ -4,6 +4,14 @@ import { nextCookies } from 'better-auth/next-js'
 import { prisma } from './prisma'
 import { lanHosts } from './dev-hosts.mjs'
 
+/** BETTER_AUTH_URL のほかにログインを受け付けるURL（カンマ区切り。例：Netlify の確認用URL https://*--resole-gym-crm.netlify.app） */
+function envOrigins(): string[] {
+  return (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 /** 開発中は同じWi-Fiの iPad（この Mac の IP・〜.local）からのログインも受け付ける */
 function devOrigins(): string[] {
   if (process.env.NODE_ENV === 'production') return []
@@ -14,7 +22,7 @@ function devOrigins(): string[] {
 // トレーナー用のログイン。アカウントはオーナーが作成する（一般公開の新規登録はしない）
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
-  trustedOrigins: devOrigins(),
+  trustedOrigins: [...envOrigins(), ...devOrigins()],
   emailAndPassword: {
     enabled: true,
     disableSignUp: true,

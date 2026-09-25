@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { headers } from 'next/headers'
 import { devLoginEnabled } from '@/lib/dev-access'
+import { demoLoginEnabled } from '@/lib/demo'
 import { LoginForm } from './LoginForm'
 
 export const metadata = { title: 'ログイン' }
@@ -14,7 +15,7 @@ export default async function LoginPage() {
       <div aria-hidden className="pointer-events-none absolute -left-32 top-[18%] h-64 w-[46rem] -rotate-12 rounded-[9rem] bg-brand opacity-90" />
       <div aria-hidden className="pointer-events-none absolute -right-40 bottom-[8%] h-48 w-[36rem] rotate-[-8deg] rounded-[8rem] bg-brand-soft" />
       <Suspense>
-        <LoginForm devLogin={devLogin} />
+        <LoginForm devLogin={devLogin} demoLogin={demoLoginEnabled()} />
       </Suspense>
     </main>
   )

@@ -21,7 +21,12 @@
     "db:seed": "prisma db seed",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "user:create": "tsx scripts/create-user.ts"
+    "user:create": "tsx scripts/create-user.ts",
+    "prod:migrate": "node --env-file=.env.production.local node_modules/prisma/build/index.js migrate deploy",
+    "prod:seed": "NODE_ENV=production tsx --env-file=.env.production.local prisma/seed.ts",
+    "prod:user": "tsx --env-file=.env.production.local scripts/create-user.ts",
+    "deploy:preview": "bash scripts/deploy-netlify.sh",
+    "deploy:prod": "bash scripts/deploy-netlify.sh --prod"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

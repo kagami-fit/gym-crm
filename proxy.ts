@@ -13,5 +13,5 @@ export function proxy(req: NextRequest) {
 
 export const config = {
   // ログイン画面・認証API・画像やアイコン（ロゴ・ホーム画面用）はログインなしで取得できる
-  matcher: ['/((?!login|api/auth|api/dev|_next/static|_next/image|favicon.ico|robots.txt|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|webp|ico)$).*)'],
+  matcher: ['/((?!login|api/auth|api/dev|api/demo|_next/static|_next/image|favicon.ico|robots.txt|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|webp|ico)$).*)'],
 }

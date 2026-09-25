@@ -7,6 +7,7 @@ Resole のトレーナーが、お客様1人ずつの体重・目標・トレー
 分析資料・要件定義は `~/⭐Claude専用/032_gym-crm/docs/` にある（GitHub には入れていない）。
 
 GitHub：https://github.com/kagami-fit/gym-crm
+公開デモ：https://resole-gym-crm.netlify.app （リンクを知っている人が「デモを見る」からログインなしで見られる。架空のデータのみ）
 
 ## 何ができるのか
 
@@ -48,6 +49,9 @@ GitHub：https://github.com/kagami-fit/gym-crm
 | `app/(focus)/memo/[sessionId]` | 手書きメモの全画面（メニューなし） |
 | `prisma/schema.prisma` | データベース設計／`prisma/seed.ts` で初期設定・種目マスタ・デモ顧客を投入 |
 | `scripts/dev.mjs` | `npm run dev`：開発用DB（`.data/postgres`）と開発サーバーを一緒に起動（`scripts/setup.mjs` は初回セットアップ） |
+| `lib/demo.ts` ・ `app/api/demo/login` | 公開デモの「デモを見る」（Netlify の環境変数 `DEMO_MODE=true` のときだけ有効） |
+| `netlify.toml` ・ `scripts/deploy-netlify.sh` | Netlify への公開（ビルド中は手元の `.env` などを退避して、公開物に秘密の値を入れない） |
+| `.env.production.local` | 公開デモのデータベース（Neon）の接続先。手元だけ・共有しない（`prod:*` のコマンドが読む） |
 | `scripts/lan-proxy.mjs` ・ `lib/dev-hosts.mjs` ・ `lib/dev-access.ts` | 開発中に同じWi-Fiの iPad から開くための中継と、開発用ログインを「この Mac だけ」に限る仕組み |
 | `scripts/create-user.ts` | ログイン用アカウントの作成（画面の「設定 → スタッフ」からも作れる） |
 | `tests/` | テスト（計算が参考シートと同じ数値になること、手書きデータの検査など、21件） |
@@ -92,12 +96,28 @@ npm run dev            # 開発用DB＋開発サーバー → http://localhost:3
 | `DEV_LOGIN` / `DEV_OWNER_EMAIL` / `DEV_OWNER_PASSWORD` | 開発用オーナー（本番では設定しない） |
 | `SEED_DEMO` | `1` でデモ顧客を投入 |
 
-### 本番公開の手順（公開先が決まったら）
+### 公開デモ（リンクを知っている人が見られる）
 
-1. Neon でデータベースを作り、`DATABASE_URL` を設定 → `npm run db:deploy` → `SEED_DEMO` なしで `npm run db:seed`
-2. `BETTER_AUTH_SECRET`（`openssl rand -base64 32`）と `BETTER_AUTH_URL`（公開URL）を設定
-3. `npm run user:create -- --email ... --name ... --role owner` でオーナーを作成
-4. Vercel などにデプロイ（健康情報を扱うため、ログイン必須のまま運用する）
+- URL：**https://resole-gym-crm.netlify.app**。ログイン画面の「デモを見る（ログイン不要）」から入れる。GitHub のページの「Website」のリンクからも開ける
+- 中身は架空のデモ顧客だけ。「デモを見る」で入るのはスタッフ権限のデモ用アカウントなので、設定の変更・アカウント作成・顧客の削除はできない。画面の上に「デモ版です」と出る
+- **本当のお客様の情報は入れない**（リンクを知っていれば誰でも入れるため）
+- 公開先：Netlify 無料プラン（プロジェクト `resole-gym-crm`、チーム kagami-fit）。**クチコミツールと同じチームなので、無料枠（月300クレジット）を共有**する。使い切ると両方とも月末まで止まる
+- データベース：Neon 無料プラン（プロジェクト `resole-gym-crm`＝calm-dust-36433090、米国オハイオ、PostgreSQL 17）
+- Netlify の環境変数：DATABASE_URL（プール経由）、DATABASE_URL_UNPOOLED、BETTER_AUTH_SECRET、BETTER_AUTH_URL、BETTER_AUTH_TRUSTED_ORIGINS、DEMO_MODE、DEMO_USER_EMAIL、DEMO_USER_PASSWORD（DEV_* は入れない）
+
+```bash
+npm run deploy:preview   # 確認用のURLに公開（クレジットを使わない）
+npm run deploy:prod      # https://resole-gym-crm.netlify.app に公開（1回15クレジット）
+npm run prod:migrate     # 公開デモのDBのテーブルを変えたとき
+npm run prod:seed        # 公開デモのDBに初期データ（設定・種目・デモ用アカウント・デモ顧客。顧客が0人のときだけデモ顧客を入れる）
+```
+
+### 本番運用に切り替えるとき（本当のお客様の情報を入れる前に）
+
+1. データの保存場所を決める（今の公開デモのDBは米国。健康情報を扱うので、国内リージョンなども検討する）
+2. Netlify の環境変数から `DEMO_MODE`・`DEMO_USER_*` を消し、デモのデータを消したDBにする（`SEED_DEMO` なしで `npm run prod:seed`）
+3. `npm run prod:user -- --email ... --name ... --role owner` でオーナーを作成し、スタッフは「設定 → スタッフ」で作る
+4. `npm run deploy:prod`（健康情報を扱うため、ログイン必須のまま運用する）
 
 ## 状態
 
@@ -109,4 +129,5 @@ npm run dev            # 開発用DB＋開発サーバー → http://localhost:3
 | デザイン | resole.jp のトーン＆マナーに合わせて作成済み |
 | 初回カウンセリングのカルテ | 未着手（内容の共有待ち。`lib/questionnaire.ts` と同じ方式で追加予定） |
 | SOAP・姿勢評価・AIフィードバック・契約/回数券/予約 | 今回は入れない（要件定義で除外） |
-| 本番公開 | 未着手（公開先・ドメインが決まったら） |
+| 公開デモ（Netlify・Neon） | 公開済み（2026-09-25）https://resole-gym-crm.netlify.app 。架空のデータのみ、「デモを見る」でログインなしに入れる |
+| 本番運用（本当のお客様の情報） | 未着手（データの保存場所・アカウントを決めてから。手順は上の「本番運用に切り替えるとき」） |
