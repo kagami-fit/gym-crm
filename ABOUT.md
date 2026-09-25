@@ -6,7 +6,7 @@ Resole のトレーナーが、お客様1人ずつの体重・目標・トレー
 
 分析資料・要件定義は `~/⭐Claude専用/032_gym-crm/docs/` にある（GitHub には入れていない）。
 
-GitHub（非公開）：https://github.com/kagami-fit/gym-crm
+GitHub：https://github.com/kagami-fit/gym-crm
 
 ## 何ができるのか
 
