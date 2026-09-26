@@ -401,12 +401,57 @@ async function seedDemo(trainerId: string | null) {
   console.log('demo: 4人を作成')
 }
 
+/**
+ * デモ顧客の会話メモ（SEED_DEMO=1 のとき。会話メモがまだないデモ顧客にだけ入れるので、
+ * すでに動いているデモ環境にもあとから入れられる）
+ */
+async function seedDemoTalk(trainerId: string | null) {
+  if (process.env.SEED_DEMO !== '1') return
+  const today = todayYmd()
+  const notes: Record<string, Array<[number, string, string]>> = {
+    'デモ 太郎': [
+      [-140, 'talk', '飲み会が週1回あり、つい食べすぎてしまうのが悩み。まずは飲み会の翌日の食事を整えるところから'],
+      [-98, 'change', 'ベルトの穴が1つ縮んだと、うれしそうに話していた'],
+      [-70, 'negative', '仕事が忙しく「今月は続けられるか不安」と話していた。週1回でも来られる曜日を一緒に確認'],
+      [-45, 'good', '会社の健康診断でLDLコレステロールが下がっていた'],
+      [-21, 'body', '右ひざに少し違和感。スクワットは浅めにして様子を見る'],
+      [-10, 'change', '階段で息が切れにくくなった。朝の通勤が楽になったとのこと'],
+      [-3, 'talk', '来月、家族で沖縄旅行。それまでにお腹まわりをすっきりさせたい'],
+    ],
+    'デモ 花子': [
+      [-85, 'talk', '夜勤明けは甘いものが欲しくなる。夜勤明けの食事の選び方を一緒に考えた'],
+      [-60, 'body', '首から肩のこりが強い日（4/10）。ストレッチを多めに'],
+      [-40, 'change', '同僚に「姿勢が良くなったね」と言われた'],
+      [-25, 'negative', '体重が思うように落ちず落ち込み気味。体脂肪率は下がっていることを一緒に確認した'],
+      [-8, 'good', '仕事終わりに階段を使うようになった。自分から始めたとのこと'],
+    ],
+    'デモ 次郎': [
+      [0, 'talk', '体験の感想：思っていたよりきつくなく、続けられそうとのこと'],
+      [0, 'negative', '以前ほかのジムを3ヶ月でやめた経験あり。「今度こそ続けたい」と話していた'],
+    ],
+    'デモ 美咲': [
+      [-180, 'talk', '在宅勤務で1日の歩数が3,000歩ほど。まずは散歩の習慣から'],
+      [-130, 'good', '前より疲れにくくなって、週末に出かけるのが楽しくなった'],
+      [-105, 'negative', '繁忙期で来月は来られそうにない。休会を相談された'],
+    ],
+  }
+  for (const [name, rows] of Object.entries(notes)) {
+    const c = await prisma.client.findFirst({ where: { name }, select: { id: true } })
+    if (!c || (await prisma.talkNote.count({ where: { clientId: c.id } })) > 0) continue
+    for (const [day, kind, text] of rows) {
+      await prisma.talkNote.create({ data: { clientId: c.id, date: toDbDate(addDays(today, day)), kind, text, createdById: trainerId } })
+    }
+    console.log(`talk: ${name} ${rows.length}件`)
+  }
+}
+
 async function main() {
   await seedSettings()
   await seedExercises()
   const ownerId = await seedDevOwner()
   const demoUserId = await seedDemoUser()
   await seedDemo(ownerId ?? demoUserId)
+  await seedDemoTalk(ownerId ?? demoUserId)
 }
 
 main()

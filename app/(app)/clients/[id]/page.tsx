@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { NotebookPen } from 'lucide-react'
 import { BasicData, ChangeGoalLink, GoalProgress, ProjectionSummary } from '@/components/client/BodyBlocks'
 import { MealWeekView } from '@/components/client/MealWeekView'
+import { TalkKindBadge } from '@/components/client/TalkKindBadge'
 import { DrawingView } from '@/components/drawing/DrawingView'
 import { SessionTable } from '@/components/client/SessionTable'
 import { ProjectionChart } from '@/components/charts/ProjectionChart'
@@ -11,6 +12,7 @@ import { EmptyState, Section } from '@/components/ui'
 import { resolveBaseDate } from '@/lib/base-date'
 import { getClient } from '@/lib/data/clients'
 import { getMealMemos } from '@/lib/data/meals'
+import { getTalkNotes } from '@/lib/data/talk'
 import { getBodyView } from '@/lib/data/overview'
 import { getDrawing, getSessions, lastRecordsBefore } from '@/lib/data/training'
 import { addDays, mdw, ymdJa } from '@/lib/dates'
@@ -26,7 +28,7 @@ export default async function ClientOverviewPage({ params, searchParams }: { par
   await requireUser()
   const { id } = await params
   const base = resolveBaseDate((await searchParams).date)
-  const [view, sessions, meals] = await Promise.all([getBodyView(id, base), getSessions(id, base), getMealMemos(id, addDays(base, -6), base)])
+  const [view, sessions, meals, talk] = await Promise.all([getBodyView(id, base), getSessions(id, base), getMealMemos(id, addDays(base, -6), base), getTalkNotes(id, { upTo: base, take: 6 })])
   // 直近の「種目の記録がある回」と「手書きメモがある回」（同じ回のこともある）
   const latest = [...sessions].reverse().find((s) => s.rows.length > 0)
   const latestMemo = [...sessions].reverse().find((s) => s.hasDrawing)
@@ -43,6 +45,32 @@ export default async function ClientOverviewPage({ params, searchParams }: { par
 
       <Section title="目標の進捗" en="Progress" aside={view.goal ? <ChangeGoalLink clientId={id} base={base} /> : undefined}>
         <GoalProgress view={view} clientId={id} />
+      </Section>
+
+      <Section
+        title="会話メモ（最近）"
+        en="Talk Log"
+        aside={
+          <Link href={`/clients/${id}/talk${q}`} className={linkClass}>
+            すべて見る・書く
+          </Link>
+        }
+      >
+        {talk.length ? (
+          <ul className="divide-y divide-line">
+            {talk.map((n) => (
+              <li key={n.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
+                <span className="num w-20 flex-none pt-0.5 text-sm font-semibold text-ink-2">{mdw(n.date)}</span>
+                <TalkKindBadge kind={n.kind} className="mt-1 flex-none" />
+                <p className="line-clamp-2 min-w-0 flex-1 text-[15px] leading-relaxed">{n.text}</p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState title="まだ会話メモがありません" action={{ href: `/clients/${id}/talk${q}`, label: '会話メモを書く' }}>
+            会話で出た変化・良かったこと・気になる言動を、日付と一緒に残せます
+          </EmptyState>
+        )}
       </Section>
 
       <Section

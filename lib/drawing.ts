@@ -103,5 +103,130 @@ export function strokePath(st: Stroke, complete = true): string {
   return `M${x - r},${y} a${r},${r} 0 1,0 ${r * 2},0 a${r},${r} 0 1,0 ${-r * 2},0 Z`
 }
 
+// ── 一覧用の小さな表示（サムネイル） ─────────────────────
+// 全部の線をそのまま送ると重いので、最初に書き込みのあるページだけを間引いた線（折れ線）にして保存しておく。
+// 一覧ではこれを表示し、タップしたら元の線を読み込んで表示する。
+
+/** 色と太さが同じ線をまとめた SVG の path（d は整数の座標、2点目以降は相対移動） */
+export type ThumbPath = { c: Ink; w: number; d: string }
+/** pages：書き込みのあるページ数／page：表示しているページ（0始まり）／box：書き込みのある範囲 [左, 上, 右, 下] */
+export type DrawingThumb = { v: 2; pages: number; page: number; box: [number, number, number, number]; paths: ThumbPath[] }
+
+const THUMB_MAX_CHARS = 40_000
+
+/** 線の点を間引く（Ramer–Douglas–Peucker 法。eps は許す誤差＝論理座標）。[x, y, x, y, …] の整数で返す */
+export function simplifyStroke(p: number[], eps: number): number[] {
+  const n = Math.floor(p.length / 3)
+  if (n === 0) return []
+  if (n === 1) return [Math.round(p[0]), Math.round(p[1])]
+  const keep = new Uint8Array(n)
+  keep[0] = 1
+  keep[n - 1] = 1
+  const stack: Array<[number, number]> = [[0, n - 1]]
+  const eps2 = eps * eps
+  while (stack.length) {
+    const [a, b] = stack.pop()!
+    const ax = p[a * 3], ay = p[a * 3 + 1]
+    const dx = p[b * 3] - ax, dy = p[b * 3 + 1] - ay
+    const len2 = dx * dx + dy * dy
+    let max = -1
+    let at = -1
+    for (let i = a + 1; i < b; i++) {
+      const px = p[i * 3] - ax, py = p[i * 3 + 1] - ay
+      const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, (px * dx + py * dy) / len2))
+      const ex = px - t * dx, ey = py - t * dy
+      const d2 = ex * ex + ey * ey
+      if (d2 > max) {
+        max = d2
+        at = i
+      }
+    }
+    if (at > 0 && max > eps2) {
+      keep[at] = 1
+      stack.push([a, at], [at, b])
+    }
+  }
+  const out: number[] = []
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(Math.round(p[i * 3]), Math.round(p[i * 3 + 1]))
+  return out
+}
+
+/** 数字を SVG の path 用につなげる（マイナスの前は区切りを省く） */
+function joinNums(nums: number[]): string {
+  let s = ''
+  for (let i = 0; i < nums.length; i++) s += i === 0 || nums[i] < 0 ? String(nums[i]) : ` ${nums[i]}`
+  return s
+}
+
+function polylinePath(pts: number[]): string {
+  if (pts.length < 2) return ''
+  const rel: number[] = []
+  for (let i = 2; i + 1 < pts.length; i += 2) {
+    const dx = pts[i] - pts[i - 2], dy = pts[i + 1] - pts[i - 1]
+    if (dx !== 0 || dy !== 0) rel.push(dx, dy)
+  }
+  // 点だけ（トン）のときも丸い線端で点が描かれるよう、長さ0の線を入れる
+  return `M${joinNums([pts[0], pts[1]])}l${rel.length ? joinNums(rel) : '0 0'}`
+}
+
+/** 一覧用の小さな表示を作る（書き込みがなければ null） */
+export function drawingThumb(data: DrawingData): DrawingThumb | null {
+  const pages = data.pages.filter((pg) => pg.length > 0).length
+  const page = data.pages.findIndex((pg) => pg.length > 0)
+  if (page < 0) return null
+  const strokes = data.pages[page]
+  let paths: ThumbPath[] = []
+  const box: [number, number, number, number] = [PAGE_W, PAGE_H, 0, 0]
+  for (const eps of [2.5, 5, 9]) {
+    const groups = new Map<string, ThumbPath>()
+    let chars = 0
+    for (const st of strokes) {
+      const pts = simplifyStroke(st.p, eps)
+      for (let i = 0; i + 1 < pts.length; i += 2) {
+        box[0] = Math.min(box[0], pts[i])
+        box[1] = Math.min(box[1], pts[i + 1])
+        box[2] = Math.max(box[2], pts[i])
+        box[3] = Math.max(box[3], pts[i + 1])
+      }
+      const d = polylinePath(pts)
+      if (!d) continue
+      // 太さは筆圧で変わるので、表示用には少し細めの一定の太さにする
+      const w = st.c === 'marker' ? MARKER_SIZE : Math.max(2, Math.round(st.s * 0.75))
+      const key = `${st.c}:${w}`
+      const g = groups.get(key)
+      if (g) g.d += d
+      else groups.set(key, { c: st.c, w, d })
+      chars += d.length
+    }
+    // マーカーは下に、ペンは上に重ねる
+    paths = [...groups.values()].sort((a, b) => Number(b.c === 'marker') - Number(a.c === 'marker'))
+    if (chars <= THUMB_MAX_CHARS) break
+  }
+  return { v: 2, pages, page, box, paths }
+}
+
+/**
+ * 一覧で見せる範囲（書き込みのある所から、高さは最大でページの半分）。
+ * 短いメモは書いてある所だけを見せて、一覧が長くなりすぎないようにする。cut：下に続きがあるか
+ */
+export function previewCrop(t: DrawingThumb, maxRatio = 0.5): { y: number; h: number; cut: boolean } {
+  const [, top, , bottom] = t.box
+  const maxH = PAGE_H * maxRatio
+  let y = Math.max(0, top - 60)
+  const h = Math.min(maxH, Math.max(320, bottom - y + 60))
+  if (y + h > PAGE_H) y = Math.max(0, PAGE_H - h)
+  return { y: Math.round(y), h: Math.round(h), cut: bottom > y + h - 10 }
+}
+
+/** 保存してある小さな表示を検査する（形が違えば null＝作り直す） */
+export function parseThumb(raw: unknown): DrawingThumb | null {
+  if (!raw || typeof raw !== 'object') return null
+  const t = raw as Partial<DrawingThumb>
+  if (t.v !== 2 || !Array.isArray(t.paths) || typeof t.pages !== 'number' || typeof t.page !== 'number') return null
+  if (!Array.isArray(t.box) || t.box.length !== 4 || !t.box.every((n) => Number.isFinite(n))) return null
+  const paths = t.paths.filter((p): p is ThumbPath => !!p && isInk(p.c) && typeof p.w === 'number' && typeof p.d === 'string' && /^[Ml0-9 -]*$/.test(p.d))
+  return { v: 2, pages: t.pages, page: t.page, box: t.box, paths }
+}
+
 /** ノート風の罫線（y座標） */
 export const RULE_LINES = Array.from({ length: Math.floor(PAGE_H / 65) - 1 }, (_, i) => (i + 1) * 65 + 20).filter((y) => y < PAGE_H - 20)

@@ -3,7 +3,7 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireUser } from '@/lib/session'
-import { isEmptyDrawing, parseDrawing } from '@/lib/drawing'
+import { drawingThumb, isEmptyDrawing, parseDrawing } from '@/lib/drawing'
 
 /** 手書きメモの保存（画面から数秒ごとに自動で呼ばれる。全部消したら記録も消す） */
 export async function saveDrawingAction(sessionId: string, json: string): Promise<{ ok: boolean; message?: string; savedAt?: string }> {
@@ -21,7 +21,8 @@ export async function saveDrawingAction(sessionId: string, json: string): Promis
     await prisma.sessionDrawing.deleteMany({ where: { sessionId } })
   } else {
     const value = data as unknown as Prisma.InputJsonValue
-    await prisma.sessionDrawing.upsert({ where: { sessionId }, update: { data: value, updatedById: user.id }, create: { sessionId, data: value, updatedById: user.id } })
+    const thumb = (drawingThumb(data) ?? undefined) as unknown as Prisma.InputJsonValue | undefined
+    await prisma.sessionDrawing.upsert({ where: { sessionId }, update: { data: value, thumb, updatedById: user.id }, create: { sessionId, data: value, thumb, updatedById: user.id } })
   }
   const savedAt = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' }).format(new Date())
   return { ok: true, savedAt }

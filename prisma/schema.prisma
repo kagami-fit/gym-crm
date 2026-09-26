@@ -29,6 +29,7 @@ model User {
   accounts      Account[]
   clients       Client[]
   trainings     TrainingSession[]
+  talkNotes     TalkNote[]
 
   @@map("user")
 }
@@ -119,6 +120,7 @@ model Client {
   mealMemos         MealMemo[]
   sessions          TrainingSession[]
   questionnaire     Questionnaire?
+  talkNotes         TalkNote[]
 
   @@index([status])
   @@index([kana])
@@ -198,8 +200,27 @@ model SessionDrawing {
   sessionId   String          @unique
   session     TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   data        Json
+  /// 一覧に出す小さな表示（最初のページを間引いた線。保存のたびに作り直す。lib/drawing.ts の drawingThumb）
+  thumb       Json?
   updatedById String?
   updatedAt   DateTime        @updatedAt
+}
+
+/// 会話メモ（会話で出た「通って変化を感じたこと」「良かったこと」「ネガティブな言動」「身体の変化」などを日付と一緒に残す）
+model TalkNote {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  /// talk（会話）/ change（変化を感じた）/ good（良かったこと）/ negative（ネガティブな言動）/ body（身体の変化）。lib/labels.ts の TALK_KINDS
+  kind        String   @default("talk")
+  text        String
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([clientId, date])
 }
 
 /// 種目ごとの記録（1行＝重さ×回数×セット数）

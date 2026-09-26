@@ -8,6 +8,7 @@ const TABS = [
   { href: '', label: '概要' },
   { href: '/body', label: '体重・目標' },
   { href: '/training', label: 'トレーニング' },
+  { href: '/talk', label: '会話メモ' },
   { href: '/meals', label: '食事メモ' },
   { href: '/profile', label: '台帳' },
   { href: '/questionnaire', label: '問診票' },

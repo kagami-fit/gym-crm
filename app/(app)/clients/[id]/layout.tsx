@@ -68,7 +68,7 @@ export default async function ClientLayout({ children, params }: { children: Rea
       {/* タブは画面の上に固定（長いページを下までスクロールしても、すぐ切り替えられる） */}
       <div className="no-print sticky top-0 z-30 -mx-4 mt-3 border-b border-line bg-page/95 px-4 backdrop-blur sm:-mx-6 sm:px-6 xl:-mx-8 xl:px-8">
         <div className="flex items-center gap-4">
-          <span className="hidden max-w-44 flex-none truncate text-sm font-black text-ink md:block">{client.name}</span>
+          <span className="hidden max-w-28 flex-none truncate text-sm font-black text-ink md:block xl:max-w-44">{client.name}</span>
           <Suspense>
             <ClientTabs clientId={id} />
           </Suspense>

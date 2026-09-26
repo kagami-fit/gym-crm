@@ -1,10 +1,15 @@
 import { INKS, PAGE_H, PAGE_W, RULE_LINES, strokePath, type DrawingData, type Stroke } from '@/lib/drawing'
 import { cn } from '@/lib/utils'
 
-/** ノートの1ページ（罫線つき）。表示専用なのでサーバーでも描画できる */
-export function DrawingPage({ strokes, className, label }: { strokes: Stroke[]; className?: string; label?: string }) {
+/** ノートの1ページ（罫線つき）。表示専用なのでサーバーでも描画できる。view でページの一部（上から y、高さ h）だけを見せる */
+export function DrawingPage({ strokes, className, label, view }: { strokes: Stroke[]; className?: string; label?: string; view?: { y: number; h: number } }) {
   return (
-    <svg viewBox={`0 0 ${PAGE_W} ${PAGE_H}`} className={cn('block h-auto w-full rounded-xl border border-line bg-[#fffdf6]', className)} role="img" aria-label={label ?? '手書きメモ'}>
+    <svg
+      viewBox={view ? `0 ${view.y} ${PAGE_W} ${view.h}` : `0 0 ${PAGE_W} ${PAGE_H}`}
+      className={cn('block h-auto w-full rounded-xl border border-line bg-[#fffdf6]', className)}
+      role="img"
+      aria-label={label ?? '手書きメモ'}
+    >
       {RULE_LINES.map((y) => (
         <line key={y} x1={40} x2={PAGE_W - 40} y1={y} y2={y} stroke="#efe6c9" strokeWidth={2} />
       ))}

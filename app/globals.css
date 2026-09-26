@@ -41,6 +41,8 @@
 }
 
 @layer base {
+  /* 顧客ページのタブ（画面上に固定）の高さ。トレーニングの「目的・目標」の帯はこのすぐ下に固定する */
+  :root { --client-tabs-h: 48px; }
   html { color-scheme: light; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   /* iPad：ダブルタップで拡大されない・タップ時の灰色の四角を出さない */
   a, button, input, select, textarea, summary, label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }

@@ -1,7 +1,8 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { fromDbDate, toDbDate, type Ymd } from '@/lib/dates'
 import type { SessionRows } from '@/lib/calc/training'
-import { isEmptyDrawing, parseDrawing, type DrawingData } from '@/lib/drawing'
+import { drawingThumb, isEmptyDrawing, parseDrawing, parseThumb, type DrawingData, type DrawingThumb } from '@/lib/drawing'
 
 export type SessionDetail = SessionRows & {
   id: string
@@ -53,4 +54,27 @@ export async function getDrawing(sessionId: string): Promise<DrawingData | null>
   if (!d) return null
   const data = parseDrawing(d.data)
   return isEmptyDrawing(data) ? null : data
+}
+
+/** 一覧に出す手書きメモの小さな表示（まだ作っていないものは、ここで作って保存する） */
+export async function getMemoThumbs(sessionIds: string[]): Promise<Record<string, DrawingThumb>> {
+  if (!sessionIds.length) return {}
+  const rows = await prisma.sessionDrawing.findMany({ where: { sessionId: { in: sessionIds } }, select: { sessionId: true, thumb: true } })
+  const out: Record<string, DrawingThumb> = {}
+  const missing: string[] = []
+  for (const r of rows) {
+    const t = parseThumb(r.thumb)
+    if (t) out[r.sessionId] = t
+    else missing.push(r.sessionId)
+  }
+  if (missing.length) {
+    const full = await prisma.sessionDrawing.findMany({ where: { sessionId: { in: missing } }, select: { sessionId: true, data: true } })
+    for (const f of full) {
+      const t = drawingThumb(parseDrawing(f.data))
+      if (!t) continue
+      out[f.sessionId] = t
+      await prisma.sessionDrawing.update({ where: { sessionId: f.sessionId }, data: { thumb: t as unknown as Prisma.InputJsonValue } }).catch(() => undefined)
+    }
+  }
+  return out
 }

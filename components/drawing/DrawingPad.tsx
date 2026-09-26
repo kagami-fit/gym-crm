@@ -60,12 +60,18 @@ export function DrawingPad({
   backHref,
   title,
   previous,
+  info,
+  toolbarExtra,
 }: {
   initial: DrawingData
   save: (json: string) => Promise<{ ok: boolean; message?: string; savedAt?: string }>
   backHref: string
   title: string
   previous?: { label: string; data: DrawingData } | null
+  /** 見出しの下に出す内容（お客様の目的・目標など） */
+  info?: React.ReactNode
+  /** 道具の並びの最後に足すボタン（会話メモなど） */
+  toolbarExtra?: React.ReactNode
 }) {
   const router = useRouter()
   const [history, setHistory] = useState<{ stack: Stroke[][][]; index: number }>({ stack: [initial.pages], index: 0 })
@@ -296,6 +302,7 @@ export function DrawingPad({
           <p className="min-w-0 flex-1 truncate text-sm font-black sm:text-base">{title}</p>
           <SaveBadge state={saveState} savedAt={savedAt} onRetry={doSave} />
         </div>
+        {info}
         <div className="mt-2 flex flex-wrap items-center gap-1.5" role="toolbar" aria-label="ペンの設定">
           {(Object.keys(INKS) as Ink[]).map((k) => (
             <button
@@ -350,6 +357,7 @@ export function DrawingPad({
               前回のメモ
             </button>
           )}
+          {toolbarExtra}
         </div>
       </header>
 
