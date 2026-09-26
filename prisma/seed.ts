@@ -9,6 +9,7 @@ import { hashPassword } from 'better-auth/crypto'
 import { DEFAULT_SETTINGS } from '../lib/calc/settings'
 import { addDays, todayYmd, toDbDate, type Ymd } from '../lib/dates'
 import { detailKey, type QAnswers } from '../lib/questionnaire'
+import { drawingThumb, parseDrawing } from '../lib/drawing'
 
 const prisma = new PrismaClient()
 
@@ -445,6 +446,38 @@ async function seedDemoTalk(trainerId: string | null) {
   }
 }
 
+/**
+ * デモ顧客の手書きメモの見本（SEED_DEMO=1 のとき）。prisma/seed-data/demo-memos.json（作り方は scripts/gen-demo-memos.py）。
+ * 手書きメモがまだ1件もないデモ顧客にだけ、種目の記録がある新しい回から順に入れる（下半身の日・上半身の日に合わせる）
+ */
+async function seedDemoMemos(trainerId: string | null) {
+  if (process.env.SEED_DEMO !== '1') return
+  const memos: Array<{ client: string; match: 'upper' | 'lower' | 'any'; data: unknown }> = JSON.parse(readFileSync(new URL('./seed-data/demo-memos.json', import.meta.url), 'utf8'))
+  const byClient = new Map<string, typeof memos>()
+  for (const m of memos) byClient.set(m.client, [...(byClient.get(m.client) ?? []), m])
+  for (const [name, list] of byClient) {
+    const c = await prisma.client.findFirst({ where: { name }, select: { id: true } })
+    if (!c || (await prisma.sessionDrawing.count({ where: { session: { clientId: c.id } } })) > 0) continue
+    const sessions = await prisma.trainingSession.findMany({
+      where: { clientId: c.id, sets: { some: {} } },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      include: { sets: { select: { bodyPart: true } } },
+    })
+    const used = new Set<string>()
+    for (const m of list) {
+      const s = sessions.find((x) => !used.has(x.id) && (m.match === 'any' || (m.match === 'lower') === x.sets.some((r) => r.bodyPart === '脚')))
+      if (!s) continue
+      used.add(s.id)
+      const data = parseDrawing(m.data)
+      const thumb = drawingThumb(data) ?? undefined
+      await prisma.sessionDrawing.create({
+        data: { sessionId: s.id, data: data as unknown as Prisma.InputJsonValue, thumb: thumb as unknown as Prisma.InputJsonValue, updatedById: trainerId },
+      })
+    }
+    console.log(`memo: ${name} ${used.size}件`)
+  }
+}
+
 async function main() {
   await seedSettings()
   await seedExercises()
@@ -452,6 +485,7 @@ async function main() {
   const demoUserId = await seedDemoUser()
   await seedDemo(ownerId ?? demoUserId)
   await seedDemoTalk(ownerId ?? demoUserId)
+  await seedDemoMemos(ownerId ?? demoUserId)
 }
 
 main()

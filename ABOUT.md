@@ -54,7 +54,8 @@ GitHub：https://github.com/kagami-fit/gym-crm
 | `components/client/TalkNotes.tsx` ・ `lib/data/talk.ts` ・ `app/(app)/clients/[id]/talk` | 会話メモ（一覧・追加・変更・削除・絞り込み・検索。種類は `lib/labels.ts` の `TALK_KINDS`） |
 | `components/Sheet.tsx` | 右から出るパネル・全画面の表示（会話メモ・手書きメモの表示で共通） |
 | `app/(focus)/memo/[sessionId]` | 手書きメモの全画面（メニューなし） |
-| `prisma/schema.prisma` | データベース設計／`prisma/seed.ts` で初期設定・種目マスタ・デモ顧客を投入 |
+| `prisma/schema.prisma` | データベース設計／`prisma/seed.ts` で初期設定・種目マスタ・デモ顧客（会話メモ・手書きメモの見本つき）を投入 |
+| `prisma/seed-data/demo-memos.json` ・ `scripts/gen-demo-memos.py` | デモ用の手書きメモの見本（8件）と、その作り方（手書き風フォント Klee One の文字をペンの線に変換。作り直すときだけ使う） |
 | `scripts/dev.mjs` | `npm run dev`：開発用DB（`.data/postgres`）と開発サーバーを一緒に起動（`scripts/setup.mjs` は初回セットアップ） |
 | `lib/demo.ts` ・ `app/api/demo/login` | 公開デモの「デモを見る」（Netlify の環境変数 `DEMO_MODE=true` のときだけ有効） |
 | `netlify.toml` ・ `scripts/deploy-netlify.sh` | Netlify への公開（ビルド中は手元の `.env` などを退避して、公開物に秘密の値を入れない） |
