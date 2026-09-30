@@ -9,11 +9,11 @@ import { int, num } from '@/lib/format'
 import type { FocusInfo } from '@/lib/data/focus'
 import { cn } from '@/lib/utils'
 
-function Row({ label, warn, open, children }: { label: string; warn?: boolean; open: boolean; children: React.ReactNode }) {
+function Row({ label, warn, open, big, children }: { label: string; warn?: boolean; open: boolean; big?: boolean; children: React.ReactNode }) {
   return (
-    <div className="flex min-w-0 items-baseline gap-2">
-      <span className={cn('inline-flex flex-none items-center gap-0.5 rounded px-1.5 text-[11px] font-bold leading-5', warn ? 'bg-warn-soft text-warn' : 'bg-dark text-white')}>
-        {warn && <AlertTriangle className="size-3" aria-hidden />}
+    <div className={cn('flex min-w-0 items-baseline', big ? 'gap-2.5' : 'gap-2')}>
+      <span className={cn('inline-flex flex-none items-center gap-0.5 rounded font-bold', big ? 'px-2 text-[13px] leading-6' : 'px-1.5 text-[11px] leading-5', warn ? 'bg-warn-soft text-warn' : 'bg-dark text-white')}>
+        {warn && <AlertTriangle className={big ? 'size-3.5' : 'size-3'} aria-hidden />}
         {label}
       </span>
       <span className={cn('min-w-0 flex-1', open ? 'whitespace-normal break-words' : 'truncate')}>{children}</span>
@@ -91,14 +91,14 @@ function Cautions({ info, open }: { info: FocusInfo; open: boolean }) {
 }
 
 /** 今月：期（色つき）と月のテーマ・トレーニングテーマ */
-function Month({ info, open }: { info: FocusInfo; open: boolean }) {
+function Month({ info, open, big }: { info: FocusInfo; open: boolean; big?: boolean }) {
   const m = info.month
   if (!info.phase && !m) return <span className="text-ink-3">未設定（ステップのタブで期とテーマを決められます）</span>
   return (
     <>
       {info.phase && (
-        <span className="mr-1.5 inline-flex items-center gap-1 rounded-full px-2 align-[1px] text-xs font-bold leading-5 text-ink" style={{ background: `${info.phase.color}24` }}>
-          <span className="size-2 rounded-full" style={{ background: info.phase.color }} aria-hidden />
+        <span className={cn('mr-1.5 inline-flex items-center gap-1 rounded-full align-[1px] font-bold text-ink', big ? 'px-2.5 text-sm leading-6' : 'px-2 text-xs leading-5')} style={{ background: `${info.phase.color}24` }}>
+          <span className={cn('rounded-full', big ? 'size-2.5' : 'size-2')} style={{ background: info.phase.color }} aria-hidden />
           {info.phase.name}
         </span>
       )}
@@ -115,7 +115,7 @@ function Month({ info, open }: { info: FocusInfo; open: boolean }) {
 }
 
 /** 食事：直近の週の平均カロリーと設定の差・PFC */
-function Meal({ info, open }: { info: FocusInfo; open: boolean }) {
+function Meal({ info, open, big }: { info: FocusInfo; open: boolean; big?: boolean }) {
   const n = info.nutrition
   if (!n) return <span className="text-ink-3">未入力（食事メモのタブで週ごとに入れられます）</span>
   const diff = n.avgKcal != null && n.targetKcal != null ? n.avgKcal - n.targetKcal : null
@@ -128,7 +128,7 @@ function Meal({ info, open }: { info: FocusInfo; open: boolean }) {
       <span className="text-ink-2">kcal</span>
       {diff != null && <span className={cn('num ml-1 font-bold', diff > 0 ? 'text-warn' : 'text-ok')}>{`${diff > 0 ? '+' : ''}${int(diff)}`}</span>}
       {pfc && <span className="num ml-1.5 text-ink-2">{pfc}</span>}
-      <span className="num ml-1.5 text-xs text-ink-3">
+      <span className={cn('num ml-1.5 text-ink-3', big ? 'text-sm' : 'text-xs')}>
         {md(n.weekStart)}〜{open ? md(addDays(n.weekStart, 6)) : ''}
       </span>
     </>
@@ -159,14 +159,15 @@ export function FocusBar({
 }) {
   const [open, setOpen] = useState(false)
   const q = `?date=${base}`
+  const big = variant === 'bar'
   const toggle = (
-    <button type="button" onClick={() => setOpen((v) => !v)} className="inline-flex h-7 flex-none items-center gap-1 rounded-full px-2.5 text-xs font-bold text-ink-2 hover:bg-brand-soft" aria-expanded={open}>
+    <button type="button" onClick={() => setOpen((v) => !v)} className={cn('inline-flex flex-none items-center gap-1 rounded-full font-bold text-ink-2 hover:bg-brand-soft', big ? 'h-9 px-3 text-sm' : 'h-7 px-2.5 text-xs')} aria-expanded={open}>
       {open ? '閉じる' : '詳しく'}
       <ChevronDown className={cn('size-4 transition', open && 'rotate-180')} aria-hidden />
     </button>
   )
   const links = open && (
-    <p className="flex flex-wrap gap-x-4 gap-y-1 pt-1 text-xs font-bold">
+    <p className={cn('flex flex-wrap gap-x-4 gap-y-1 pt-1 font-bold', big ? 'text-sm' : 'text-xs')}>
       <Link href={`/clients/${clientId}/body${q}`} className="text-brand-ink underline-offset-2 hover:underline">
         目標を変える
       </Link>
@@ -223,37 +224,38 @@ export function FocusBar({
     )
   }
 
-  // 1行目：目的＋ボタン／2行目：目標（横幅いっぱい。予定との差まで見えるように）／3行目：今月（期・テーマ）と食事／4行目：注意＋「詳しく」／5行目：お知らせ・宿題
+  // 1行目：目的＋ボタン／2行目：目標（横幅いっぱい。予定との差まで見えるように）／3行目：今月（期・テーマ）と食事（iPad 縦では2行）／4行目：注意＋「詳しく」／5行目：お知らせ・宿題
   return (
-    <div className="no-print sticky top-[var(--client-tabs-h)] z-20 -mx-4 -mt-5 mb-4 border-b border-line bg-page/95 px-4 py-1.5 backdrop-blur sm:-mx-6 sm:px-6 xl:-mx-8 xl:px-8">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-sm leading-6">
-        <Row label="目的" open={open}>
+    <div className="no-print sticky top-[var(--client-tabs-h)] z-20 -mx-4 -mt-5 mb-4 border-b border-line bg-page/95 px-4 py-2.5 backdrop-blur sm:-mx-6 sm:px-6 xl:-mx-8 xl:px-8">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-base leading-7">
+        <Row label="目的" open={open} big>
           <Purpose info={info} open={open} />
         </Row>
-        <div className="flex flex-wrap justify-end gap-1.5">{actions}</div>
+        <div className="flex flex-wrap justify-end gap-2">{actions}</div>
         <div className="col-span-2 min-w-0">
-          <Row label="目標" open={open}>
+          <Row label="目標" open={open} big>
             <Goal info={info} open={open} />
           </Row>
         </div>
-        <div className={cn('col-span-2 grid min-w-0 gap-x-4 gap-y-0.5', open ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)]')}>
-          <Row label="今月" open={open}>
-            <Month info={info} open={open} />
+        {/* 今月と食事：横長の画面では横に並べ、iPad 縦などでは1行ずつ（途中で切れないように） */}
+        <div className={cn('col-span-2 grid min-w-0 gap-x-5 gap-y-1', open ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]')}>
+          <Row label="今月" open={open} big>
+            <Month info={info} open={open} big />
           </Row>
-          <Row label="食事" open={open}>
-            <Meal info={info} open={open} />
+          <Row label="食事" open={open} big>
+            <Meal info={info} open={open} big />
           </Row>
         </div>
         <div className="min-w-0">
           {info.cautions.length > 0 && (
-            <Row label="注意" warn open={open}>
+            <Row label="注意" warn open={open} big>
               <Cautions info={info} open={open} />
             </Row>
           )}
         </div>
         <div className="justify-self-end">{toggle}</div>
         {links && <div className="col-span-2">{links}</div>}
-        {alerts && <div className="col-span-2 min-w-0 pt-0.5">{alerts}</div>}
+        {alerts && <div className="col-span-2 min-w-0 pt-1">{alerts}</div>}
       </div>
     </div>
   )

@@ -15,7 +15,7 @@ import { getAnsMeasurements } from '@/lib/data/ans'
 import { getHomework } from '@/lib/data/homework'
 import { getClient } from '@/lib/data/clients'
 import { getFocusInfo } from '@/lib/data/focus'
-import { getCalcSettings } from '@/lib/data/settings'
+import { getCalcSettings, getPurposes } from '@/lib/data/settings'
 import { getTalkNotes } from '@/lib/data/talk'
 import { getExercises, getMemoThumbs, getSessions, lastRecordsBefore } from '@/lib/data/training'
 import { md, mdw, todayYmd, ymdJa } from '@/lib/dates'
@@ -35,7 +35,7 @@ type SP = { date?: string; edit?: string; saved?: string; deleted?: string; all?
 /** 最初に出す回数（手書きメモの小さな表示つき）。それより前は「さらに表示」で出す */
 const LIST_LIMIT = 20
 
-const barBtn = 'inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-sm font-bold'
+const barBtn = 'inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-full px-4 text-[15px] font-bold'
 const barBtnLight = `${barBtn} border border-line-2 bg-white text-ink-2 hover:bg-soft active:bg-brand-soft`
 const barBtnBrand = `${barBtn} bg-brand text-ink shadow-[0_3px_10px_rgba(251,175,0,0.25)] hover:bg-brand-deep`
 
@@ -45,7 +45,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
   const sp = await searchParams
   const base = resolveBaseDate(sp.date)
   const today = todayYmd()
-  const [client, settings, sessions, exercises, focus, talk, alertBoard, homework, ans] = await Promise.all([
+  const [client, settings, sessions, exercises, focus, talk, alertBoard, homework, ans, purposes] = await Promise.all([
     getClient(id),
     getCalcSettings(),
     getSessions(id),
@@ -55,6 +55,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
     getClientAlertBoard(id),
     getHomework(id),
     getAnsMeasurements(id),
+    getPurposes(),
   ])
   const ansByDate = new Map<string, typeof ans>()
   for (const m of ans) ansByDate.set(m.measuredOn, [...(ansByDate.get(m.measuredOn) ?? []), m])
@@ -143,7 +144,8 @@ export default async function TrainingPage({ params, searchParams }: { params: P
               sessionId={editing?.id ?? null}
               initial={{ date: editing?.date ?? base, memo: editing?.memo ?? '', rows: editing?.rows ?? [] }}
               bodyParts={settings.bodyParts}
-              exercises={exercises.map((e) => ({ bodyPart: e.bodyPart, name: e.name }))}
+              exercises={exercises.map((e) => ({ bodyPart: e.bodyPart, name: e.name, purpose: e.purpose }))}
+              purposes={purposes}
               history={history}
               method={settings.oneRmMethod}
               cancelHref={`/clients/${id}/training${q}`}
@@ -159,6 +161,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
                 const isBase = s.id === baseSession?.id
                 const memoOnly = s.rows.length === 0
                 const hasMemo = !!thumbs[s.id]
+                const purposeList = [...new Set(s.rows.map((r) => r.purpose).filter((p): p is string => !!p))]
                 return (
                   <article key={s.id} className={cn('rounded-xl border', isBase ? 'border-brand-deep bg-brand-soft/40' : 'border-line bg-white')}>
                     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-4 pt-3">
@@ -184,6 +187,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
                             </span>
                           </p>
                         )}
+                        {purposeList.length > 0 && <p className="text-sm text-ink-2">目的：{purposeList.join('・')}</p>}
                         {s.memo && <p className="text-sm text-ink-2">メモ：{s.memo}</p>}
                         {ansByDate.get(s.date)?.map((m) => (
                           <a key={m.id} href={`/api/ans/${m.id}`} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#c4497a]/10 px-3 text-xs font-bold text-[#9c2f5c] hover:bg-[#c4497a]/20">

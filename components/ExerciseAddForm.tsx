@@ -5,7 +5,7 @@ import { Plus } from 'lucide-react'
 import { inputClass } from '@/components/ui'
 import { FormMessage, SubmitButton, type ActionState } from '@/components/SubmitButton'
 
-export function ExerciseAddForm({ action, bodyParts }: { action: (p: ActionState, fd: FormData) => Promise<ActionState>; bodyParts: string[] }) {
+export function ExerciseAddForm({ action, bodyParts, purposes }: { action: (p: ActionState, fd: FormData) => Promise<ActionState>; bodyParts: string[]; purposes: string[] }) {
   const [state, formAction] = useActionState(action, null)
   return (
     <form action={formAction} className="flex flex-wrap items-end gap-2">
@@ -20,6 +20,15 @@ export function ExerciseAddForm({ action, bodyParts }: { action: (p: ActionState
       <label className="min-w-64 flex-1 text-sm font-bold">
         種目名
         <input name="name" required maxLength={60} className={`${inputClass} mt-1`} placeholder="例：ヒップスラスト" />
+      </label>
+      <label className="text-sm font-bold">
+        いつもの目的
+        <select name="purpose" defaultValue="" className={`${inputClass} mt-1 w-48`}>
+          <option value="">目的なし</option>
+          {purposes.map((p) => (
+            <option key={p}>{p}</option>
+          ))}
+        </select>
       </label>
       <SubmitButton pendingText="追加しています">
         <Plus className="size-4" aria-hidden />

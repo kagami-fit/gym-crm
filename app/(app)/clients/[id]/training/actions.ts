@@ -15,6 +15,7 @@ const rowSchema = z.object({
   reps: z.number().int('回数は整数で入れてください').min(1, '回数は1以上にしてください').max(200),
   sets: z.number().int('セット数は整数で入れてください').min(1, 'セット数は1以上にしてください').max(30),
   note: z.string().trim().max(100).nullable().optional(),
+  purpose: z.string().trim().max(20).nullable().optional(),
 })
 const payloadSchema = z.object({
   date: z.string().refine(isYmd, '日付が正しくありません'),
@@ -37,7 +38,7 @@ export async function saveSessionAction(clientId: string, sessionId: string | nu
     return { ok: false, message: `${rowNo}${issue?.message ?? '入力内容を確認してください'}`, at: Date.now() }
   }
   const { date, memo, rows } = r.data
-  const sets = rows.map((x, order) => ({ order, bodyPart: x.bodyPart, exercise: x.exercise, weightKg: x.weightKg, reps: x.reps, sets: x.sets, note: x.note || null }))
+  const sets = rows.map((x, order) => ({ order, bodyPart: x.bodyPart, exercise: x.exercise, weightKg: x.weightKg, reps: x.reps, sets: x.sets, note: x.note || null, purpose: x.purpose || null }))
 
   if (sessionId) {
     const exists = await prisma.trainingSession.findFirst({ where: { id: sessionId, clientId }, select: { id: true } })

@@ -9,10 +9,12 @@ import { estimate1RM } from '@/lib/calc/training'
 import type { OneRmMethod } from '@/lib/calc/settings'
 import { mdw } from '@/lib/dates'
 import { int, num } from '@/lib/format'
+import { purposeOptionsWith } from '@/lib/purposes'
 import { cn } from '@/lib/utils'
 
-type SetRow = { bodyPart: string; exercise: string; weightKg: number; reps: number; sets: number; note?: string | null }
-type Row = { key: string; bodyPart: string; exercise: string; custom: boolean; weightKg: string; reps: string; sets: string; note: string }
+type SetRow = { bodyPart: string; exercise: string; weightKg: number; reps: number; sets: number; note?: string | null; purpose?: string | null }
+/** autoPurpose：目的を自動で入れた・読み込んだ（種目を変えたら、新しい種目の目的に入れ替える）。この画面で自分で選んだ目的は種目を変えても残す */
+type Row = { key: string; bodyPart: string; exercise: string; custom: boolean; weightKg: string; reps: string; sets: string; note: string; purpose: string; autoPurpose: boolean }
 type HistorySession = { id: string; date: string; rows: SetRow[] }
 
 const CUSTOM = '__custom__'
@@ -29,6 +31,8 @@ function toRow(r: SetRow, known: Set<string>): Row {
     reps: String(r.reps),
     sets: String(r.sets),
     note: r.note ?? '',
+    purpose: r.purpose ?? '',
+    autoPurpose: true,
   }
 }
 
@@ -71,6 +75,7 @@ export function SessionEditor({
   initial,
   bodyParts,
   exercises,
+  purposes,
   history,
   method,
   cancelHref,
@@ -81,18 +86,22 @@ export function SessionEditor({
   sessionId: string | null
   initial: { date: string; memo: string; rows: SetRow[] }
   bodyParts: string[]
-  exercises: Array<{ bodyPart: string; name: string }>
+  /** purpose：種目マスタの「いつもの目的」 */
+  exercises: Array<{ bodyPart: string; name: string; purpose?: string | null }>
+  /** 目的の選択肢（設定 → 種目マスタ） */
+  purposes: string[]
   history: HistorySession[]
   method: OneRmMethod
   cancelHref: string
   memoHref?: string | null
 }) {
   const known = useMemo(() => new Set(exercises.map((e) => `${e.bodyPart}::${e.name}`)), [exercises])
+  const masterPurpose = useMemo(() => new Map(exercises.filter((e) => e.purpose).map((e) => [`${e.bodyPart}::${e.name}`, e.purpose!])), [exercises])
   const [state, formAction] = useActionState(action, null)
   const [date, setDate] = useState(initial.date)
   const [memo, setMemo] = useState(initial.memo)
   const [rows, setRows] = useState<Row[]>(() =>
-    initial.rows.length ? initial.rows.map((r) => toRow(r, known)) : [{ key: newKey(), bodyPart: bodyParts[0] ?? '', exercise: '', custom: false, weightKg: '', reps: '', sets: '3', note: '' }],
+    initial.rows.length ? initial.rows.map((r) => toRow(r, known)) : [{ key: newKey(), bodyPart: bodyParts[0] ?? '', exercise: '', custom: false, weightKg: '', reps: '', sets: '3', note: '', purpose: '', autoPurpose: false }],
   )
 
   const before = useMemo(() => history.filter((s) => s.date < date && s.id !== sessionId && s.rows.length > 0).sort((a, b) => (a.date < b.date ? -1 : 1)), [history, date, sessionId])
@@ -102,6 +111,13 @@ export function SessionEditor({
     return m
   }, [before])
   const previousSession = before.at(-1)
+  /** 種目を選んだときに入れる目的：このお客様の前回の目的 → 種目マスタの「いつもの目的」 */
+  const suggestPurpose = (bodyPart: string, exercise: string) => lastByExercise.get(exercise)?.r.purpose || masterPurpose.get(`${bodyPart}::${exercise}`) || ''
+  const pickExercise = (r: Row, exercise: string) => {
+    if (r.purpose && !r.autoPurpose) return update(r.key, { exercise })
+    const s = exercise ? suggestPurpose(r.bodyPart, exercise) : ''
+    update(r.key, { exercise, purpose: s, autoPurpose: !!s })
+  }
 
   const update = (key: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)))
   const remove = (key: string) => setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.key !== key) : rs))
@@ -114,7 +130,7 @@ export function SessionEditor({
       ;[next[i], next[j]] = [next[j], next[i]]
       return next
     })
-  const add = () => setRows((rs) => [...rs, { key: newKey(), bodyPart: rs.at(-1)?.bodyPart ?? bodyParts[0] ?? '', exercise: '', custom: false, weightKg: '', reps: '', sets: rs.at(-1)?.sets || '3', note: '' }])
+  const add = () => setRows((rs) => [...rs, { key: newKey(), bodyPart: rs.at(-1)?.bodyPart ?? bodyParts[0] ?? '', exercise: '', custom: false, weightKg: '', reps: '', sets: rs.at(-1)?.sets || '3', note: '', purpose: '', autoPurpose: false }])
   const loadPrevious = () => {
     if (!previousSession) return
     const blank = rows.every((r) => !r.exercise && !r.weightKg && !r.reps)
@@ -137,7 +153,7 @@ export function SessionEditor({
     memo: memo.trim() || null,
     rows: rows
       .filter((r) => r.exercise.trim() || r.weightKg || r.reps)
-      .map((r) => ({ bodyPart: r.bodyPart, exercise: r.exercise.trim(), weightKg: n(r.weightKg) ?? NaN, reps: n(r.reps) ?? NaN, sets: n(r.sets) ?? NaN, note: r.note.trim() || null })),
+      .map((r) => ({ bodyPart: r.bodyPart, exercise: r.exercise.trim(), weightKg: n(r.weightKg) ?? NaN, reps: n(r.reps) ?? NaN, sets: n(r.sets) ?? NaN, note: r.note.trim() || null, purpose: r.purpose || null })),
   })
 
   return (
@@ -174,11 +190,11 @@ export function SessionEditor({
           const last = r.exercise ? lastByExercise.get(r.exercise) : undefined
           return (
             <div key={r.key} className="rounded-2xl border border-line bg-soft p-3">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="num grid size-8 flex-none place-items-center rounded-full bg-white text-sm font-semibold text-ink-2 ring-1 ring-line">{i + 1}</span>
                 <select
                   value={r.bodyPart}
-                  onChange={(e) => update(r.key, { bodyPart: e.target.value, exercise: '', custom: false })}
+                  onChange={(e) => update(r.key, { bodyPart: e.target.value, exercise: '', custom: false, ...(r.autoPurpose ? { purpose: '', autoPurpose: false } : {}) })}
                   className={cn(inputClass, 'w-28 flex-none')}
                   aria-label={`${i + 1}行目の部位`}
                 >
@@ -188,7 +204,7 @@ export function SessionEditor({
                     </option>
                   ))}
                 </select>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 basis-40">
                   {r.custom ? (
                     <div className="flex gap-1">
                       <input value={r.exercise} onChange={(e) => update(r.key, { exercise: e.target.value })} maxLength={60} className={inputClass} placeholder="種目名を入力" aria-label={`${i + 1}行目の種目`} />
@@ -199,7 +215,7 @@ export function SessionEditor({
                   ) : (
                     <select
                       value={r.exercise}
-                      onChange={(e) => (e.target.value === CUSTOM ? update(r.key, { custom: true, exercise: '' }) : update(r.key, { exercise: e.target.value }))}
+                      onChange={(e) => (e.target.value === CUSTOM ? update(r.key, { custom: true, exercise: '' }) : pickExercise(r, e.target.value))}
                       className={inputClass}
                       aria-label={`${i + 1}行目の種目`}
                     >
@@ -213,6 +229,22 @@ export function SessionEditor({
                     </select>
                   )}
                 </div>
+                <label className="order-last flex w-full items-center gap-2 pl-10 lg:order-none lg:w-60 lg:pl-0">
+                  <span className="flex-none text-xs font-bold text-ink-3">目的</span>
+                  <select
+                    value={r.purpose}
+                    onChange={(e) => update(r.key, { purpose: e.target.value, autoPurpose: false })}
+                    className={cn(inputClass, 'min-w-0 flex-1 lg:flex-1', !r.purpose && 'text-ink-3')}
+                    aria-label={`${i + 1}行目の目的`}
+                  >
+                    <option value="">目的を選ぶ</option>
+                    {purposeOptionsWith(purposes, r.purpose).map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <div className="flex flex-none">
                   <button type="button" onClick={() => move(r.key, -1)} disabled={i === 0} className={buttonClass.ghost} aria-label="上へ">
                     <ArrowUp className="size-4" aria-hidden />
@@ -248,7 +280,7 @@ export function SessionEditor({
                       {last.r.weightKg === 0 ? '自重' : `${num(last.r.weightKg, last.r.weightKg % 1 === 0 ? 0 : 1)}kg`} × {last.r.reps}回 × {last.r.sets}セット
                     </span>
                   </span>
-                  <button type="button" onClick={() => update(r.key, { weightKg: String(last.r.weightKg), reps: String(last.r.reps), sets: String(last.r.sets) })} className={buttonClass.small}>
+                  <button type="button" onClick={() => update(r.key, { weightKg: String(last.r.weightKg), reps: String(last.r.reps), sets: String(last.r.sets), ...(!r.purpose && last.r.purpose ? { purpose: last.r.purpose, autoPurpose: true } : {}) })} className={buttonClass.small}>
                     前回と同じ
                   </button>
                 </div>

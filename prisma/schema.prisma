@@ -244,6 +244,8 @@ model TrainingSet {
   reps      Int
   sets      Int
   note      String?
+  /// その種目をやる目的（設定の「目的の選択肢」から選ぶ。名前で持つので、選択肢を消しても記録は残る）
+  purpose   String?
 
   @@index([sessionId])
   @@index([exercise])
@@ -256,6 +258,8 @@ model Exercise {
   name      String
   sortOrder Int     @default(0)
   active    Boolean @default(true)
+  /// いつもの目的（記録でこの種目を選ぶと、目的に自動で入る）
+  purpose   String?
 
   @@unique([bodyPart, name])
 }

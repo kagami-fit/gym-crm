@@ -46,11 +46,12 @@ export default async function MemoPage({ params }: { params: Promise<{ sessionId
       backHref={`/clients/${session.clientId}/training?date=${date}`}
       title={`${session.client.name} さん　${mdw(date)} の手書きメモ`}
       previous={prev && prevData && !isEmptyDrawing(prevData) ? { label: `前回（${mdw(fromDbDate(prev.date))}）の手書きメモ`, data: prevData } : null}
-      info={<FocusBar variant="line" info={focus} clientId={clientId} base={date} />}
+      info={<FocusBar key="info" variant="line" info={focus} clientId={clientId} base={date} />}
       toolbarExtra={
         <>
-        <ClientAlertsButton board={alertBoard} homework={homework} base={date} clientId={clientId} clientName={session.client.name} className={toolBtn} />
+        <ClientAlertsButton key="alerts" board={alertBoard} homework={homework} base={date} clientId={clientId} clientName={session.client.name} className={toolBtn} />
         <TalkSheetButton
+          key="talk"
           title={`${session.client.name} さんの会話メモ`}
           className={toolBtn}
           initial={talk}

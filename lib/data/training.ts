@@ -1,15 +1,15 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { fromDbDate, toDbDate, type Ymd } from '@/lib/dates'
-import type { SessionRows } from '@/lib/calc/training'
+import type { SessionRows, SetRow } from '@/lib/calc/training'
 import { drawingThumb, isEmptyDrawing, parseDrawing, parseThumb, type DrawingData, type DrawingThumb } from '@/lib/drawing'
 
-export type SessionDetail = SessionRows & {
+export type SessionDetail = Omit<SessionRows, 'rows'> & {
   id: string
   memo: string | null
   trainerName: string | null
   hasDrawing: boolean
-  rows: Array<SessionRows['rows'][number] & { note: string | null }>
+  rows: Array<SetRow & { note: string | null; purpose: string | null }>
 }
 
 export async function getSessions(clientId: string, upTo?: Ymd): Promise<SessionDetail[]> {
@@ -24,7 +24,7 @@ export async function getSessions(clientId: string, upTo?: Ymd): Promise<Session
     memo: s.memo,
     trainerName: s.trainer?.name ?? null,
     hasDrawing: s.drawing != null,
-    rows: s.sets.map((r) => ({ bodyPart: r.bodyPart, exercise: r.exercise, weightKg: r.weightKg, reps: r.reps, sets: r.sets, note: r.note })),
+    rows: s.sets.map((r) => ({ bodyPart: r.bodyPart, exercise: r.exercise, weightKg: r.weightKg, reps: r.reps, sets: r.sets, note: r.note, purpose: r.purpose })),
   }))
 }
 
@@ -44,7 +44,7 @@ export async function getExercises(activeOnly = true) {
   return prisma.exercise.findMany({
     where: activeOnly ? { active: true } : undefined,
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    select: { id: true, bodyPart: true, name: true, sortOrder: true, active: true },
+    select: { id: true, bodyPart: true, name: true, sortOrder: true, active: true, purpose: true },
   })
 }
 

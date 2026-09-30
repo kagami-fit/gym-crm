@@ -1,3 +1,4 @@
+import { Target } from 'lucide-react'
 import { estimate1RM, summarize, volume } from '@/lib/calc/training'
 import type { OneRmMethod } from '@/lib/calc/settings'
 import type { SessionDetail } from '@/lib/data/training'
@@ -37,6 +38,12 @@ export function SessionTable({ session, method, previous }: { session: SessionDe
                 <td className="whitespace-nowrap px-3 py-2.5 text-ink-2">{r.bodyPart}</td>
                 <td className="min-w-40 px-3 py-2.5">
                   <span className="font-bold">{r.exercise}</span>
+                  {r.purpose && (
+                    <span className="ml-1.5 inline-flex items-center gap-0.5 whitespace-nowrap rounded-full bg-tint px-2 align-[1px] text-xs font-bold leading-5 text-dark">
+                      <Target className="size-3" aria-hidden />
+                      {r.purpose}
+                    </span>
+                  )}
                   {previous && <span className="num mt-0.5 block text-xs text-ink-3 xl:hidden">前回 {prevText}</span>}
                 </td>
                 <td className="num tnum whitespace-nowrap px-3 py-2.5 text-right">{kgText(r.weightKg)}</td>

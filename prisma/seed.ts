@@ -10,6 +10,7 @@ import { DEFAULT_SETTINGS } from '../lib/calc/settings'
 import { addDays, addMonthsKey, fromDbDate, monthKey, todayYmd, toDbDate, weekStartOf, type Ymd } from '../lib/dates'
 import { detailKey, type QAnswers } from '../lib/questionnaire'
 import { drawingThumb, parseDrawing } from '../lib/drawing'
+import { normalizePurposes } from '../lib/purposes'
 
 const prisma = new PrismaClient()
 
@@ -547,7 +548,7 @@ async function seedDemoAlerts(trainerId: string | null) {
 /**
  * デモで顧客ステップ・宿題を見られるようにする（SEED_DEMO=1 のとき1回だけ。AppSetting "demo:steps" に印を残す）
  * 日付は各お客様の入会日・来店日から決める（デモ顧客を作った日と、この関数を実行した日がずれても合うように）
- * - 期：太郎さん 自律神経期→ピラティス期→筋力アップ期（名前を自由につけた例）、花子さん 自律神経期→ピラティス期、美咲さん 休会前まで
+ * - 期：太郎さん 自律神経期→ピラティス期→筋トレ期、花子さん 自律神経期→ピラティス期、美咲さん 休会前まで
  * - 月ごとのテーマ（来月の分は空けておく）
  * - 宿題：確認待ちと、これまでの結果
  * - 自律神経の測定結果（見本の PDF）を来店日に
@@ -570,7 +571,7 @@ async function seedDemoSteps(trainerId: string | null) {
   const hj = fromDbDate(hanako.joinedOn)
   await phase(taro.id, '自律神経期', tj, null, '睡眠5〜6時間・デスクワークで肩が上がりやすい。まず呼吸と睡眠から')
   await phase(taro.id, 'ピラティス期', addDays(tj, 42), null, '睡眠が6.5時間まで伸びたので移行')
-  await phase(taro.id, '筋力アップ期', addDays(tj, 105), null, '期の名前は自由につけられる例')
+  await phase(taro.id, '筋トレ期', addDays(tj, 105), null, TARO_STRENGTH_NOTE)
   await phase(hanako.id, '自律神経期', hj, null, '夜勤で睡眠が乱れやすいので長めに')
   await phase(hanako.id, 'ピラティス期', addDays(hj, 49))
   if (misaki?.joinedOn) {
@@ -649,6 +650,50 @@ async function seedDemoSteps(trainerId: string | null) {
   console.log('steps: デモの期・テーマ・宿題・自律神経の測定結果を用意')
 }
 
+const TARO_STRENGTH_NOTE = 'ピラティスで姿勢と体幹が安定してきたので、筋トレを増やす'
+
+/** デモの記録に入れる「種目の目的」（種目名 → 目的。目的は初期の選択肢の名前） */
+const DEMO_PURPOSES: Record<string, string> = {
+  ベンチプレス: '筋力アップ',
+  'ラットプルダウン（プロネイト）': '姿勢を整える',
+  'ダンベルショルダープレス（座位）': '筋力アップ',
+  ケーブルプレスダウン: 'ボディメイク',
+  'バックスクワット（ハイバー）': '筋力アップ',
+  ルーマニアンデッドリフト: '痛みの予防・改善',
+  ブルガリアンスクワット: '筋力アップ',
+  ケーブルクランチ: '体幹を安定させる',
+  ワイドスタンススクワット: '脂肪燃焼',
+  ヒップリフト: '姿勢を整える',
+  'ラットプルダウン（パラレルグリップ）': '姿勢を整える',
+  'ベンチプレス（ダンベル）': 'ボディメイク',
+  サイドレイズ: 'ボディメイク',
+  ゴブレットスクワット: '筋力アップ',
+  シーテッドロウイング: '姿勢を整える',
+  クランチ: '体幹を安定させる',
+}
+
+/**
+ * デモで「種目の目的」を見られるようにする（SEED_DEMO=1 のとき1回だけ。AppSetting "demo:purposes" に印を残す）
+ * - デモで使う種目に、種目マスタの「いつもの目的」を入れる（まだ入っていないものだけ）
+ * - デモ顧客のこれまでの記録に目的を入れる（まだ入っていないものだけ）
+ * - 前のデモの「筋力アップ期」を「筋トレ期」に（京角さんの流れ：自律神経 → ピラティス → 筋トレ）
+ */
+async function seedDemoPurposes() {
+  if (process.env.SEED_DEMO !== '1') return
+  if (await prisma.appSetting.findUnique({ where: { key: 'demo:purposes' } })) return
+  const options = normalizePurposes((await prisma.appSetting.findUnique({ where: { key: 'purposes' } }))?.value)
+  let master = 0
+  let records = 0
+  for (const [exercise, purpose] of Object.entries(DEMO_PURPOSES)) {
+    if (!options.includes(purpose)) continue
+    master += (await prisma.exercise.updateMany({ where: { name: exercise, purpose: null }, data: { purpose } })).count
+    records += (await prisma.trainingSet.updateMany({ where: { exercise, purpose: null, session: { client: { name: { startsWith: 'デモ ' } } } }, data: { purpose } })).count
+  }
+  const renamed = await prisma.clientPhase.updateMany({ where: { name: '筋力アップ期', client: { name: 'デモ 太郎' } }, data: { name: '筋トレ期', note: TARO_STRENGTH_NOTE } })
+  await prisma.appSetting.create({ data: { key: 'demo:purposes', value: { at: todayYmd() } } })
+  console.log(`purposes: 種目マスタ ${master}件・記録 ${records}件に目的を入れた（期の名前の変更 ${renamed.count}件）`)
+}
+
 async function main() {
   await seedSettings()
   await seedExercises()
@@ -659,6 +704,7 @@ async function main() {
   await seedDemoMemos(ownerId ?? demoUserId)
   await seedDemoAlerts(ownerId ?? demoUserId)
   await seedDemoSteps(ownerId ?? demoUserId)
+  await seedDemoPurposes()
 }
 
 main()
