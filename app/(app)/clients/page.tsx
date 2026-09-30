@@ -1,6 +1,9 @@
 import Link from 'next/link'
 import { Plus, Search } from 'lucide-react'
+import { LEVEL_STYLE } from '@/components/alerts/Level'
 import { Badge, EmptyState, Notice, PageHeader, StatusBadge, Value, buttonClass, inputClass } from '@/components/ui'
+import type { Level } from '@/lib/alerts/rules'
+import { getAlertBoard, summarizeByClient } from '@/lib/data/alerts'
 import { listClients, countByStatus } from '@/lib/data/clients'
 import { GENDERS, STATUSES, isGender, isStatus } from '@/lib/labels'
 import { diffDays, md, todayYmd } from '@/lib/dates'
@@ -19,12 +22,25 @@ const TABS = [
   { key: 'all', label: 'すべて' },
 ] as const
 
+/** お知らせがあるお客様の印（件数・一番重い段階の色） */
+function AlertMark({ mark }: { mark?: { count: number; level: Level } }) {
+  if (!mark) return null
+  const { icon: Icon, chip, label } = LEVEL_STYLE[mark.level]
+  return (
+    <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${chip}`} title={`お知らせ ${mark.count}件（${label}）`}>
+      <Icon className="size-3.5" aria-hidden />
+      <span className="num">{mark.count}</span>
+    </span>
+  )
+}
+
 export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; denied?: string; deleted?: string }> }) {
-  await requireUser()
+  const user = await requireUser()
   const sp = await searchParams
   const tab = TABS.some((t) => t.key === sp.status) ? (sp.status as (typeof TABS)[number]['key']) : 'current'
   const q = sp.q?.slice(0, 50) ?? ''
-  const [all, counts] = await Promise.all([listClients({ q, status: isStatus(tab) ? tab : 'all' }), countByStatus()])
+  const [all, counts, board] = await Promise.all([listClients({ q, status: isStatus(tab) ? tab : 'all' }), countByStatus(), getAlertBoard(user.id, 'all')])
+  const marks = summarizeByClient(board)
   const rows = tab === 'current' ? all.filter((c) => c.status !== 'left') : all
   const today = todayYmd()
   const countOf = (key: string) =>
@@ -82,7 +98,10 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                         {[c.kana, c.age != null ? `${c.age}歳` : null, c.gender && isGender(c.gender) ? GENDERS[c.gender].replace('その他・回答しない', 'その他') : null].filter(Boolean).join('　')}
                       </p>
                     </div>
-                    <StatusBadge status={c.status} />
+                    <span className="flex flex-none items-center gap-1.5">
+                      <AlertMark mark={marks.get(c.id)} />
+                      <StatusBadge status={c.status} />
+                    </span>
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-soft p-2.5 text-center">
                     <div>
@@ -116,6 +135,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
               <tr>
                 <th className="px-4 py-3 font-bold">氏名</th>
                 <th className="px-3 py-3 font-bold">ステータス</th>
+                <th className="px-3 py-3 font-bold">お知らせ</th>
                 <th className="px-3 py-3 font-bold">年齢・性別</th>
                 <th className="px-3 py-3 font-bold">担当</th>
                 <th className="px-3 py-3 font-bold">最終来店日</th>
@@ -139,6 +159,9 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                     </td>
                     <td className="px-3 py-3">
                       <StatusBadge status={c.status} />
+                    </td>
+                    <td className="px-3 py-3">
+                      <AlertMark mark={marks.get(c.id)} />
                     </td>
                     <td className="px-3 py-3 text-ink-2">
                       {c.age != null ? <span className="num">{c.age}</span> : '—'}

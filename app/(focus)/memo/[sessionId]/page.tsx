@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation'
+import { ClientAlertsButton } from '@/components/alerts/ClientAlerts'
 import { FocusBar } from '@/components/client/FocusBar'
 import { TalkSheetButton } from '@/components/client/TalkNotes'
 import { DrawingPad } from '@/components/drawing/DrawingPad'
+import { getClientAlertBoard } from '@/lib/data/alerts'
 import { getFocusInfo } from '@/lib/data/focus'
 import { getTalkNotes } from '@/lib/data/talk'
 import { emptyDrawing, isEmptyDrawing, parseDrawing } from '@/lib/drawing'
@@ -33,7 +35,7 @@ export default async function MemoPage({ params }: { params: Promise<{ sessionId
   })
   const prevData = prev?.drawing ? parseDrawing(prev.drawing.data) : null
   const clientId = session.clientId
-  const [focus, talk] = await Promise.all([getFocusInfo(clientId, date), getTalkNotes(clientId)])
+  const [focus, talk, alertBoard] = await Promise.all([getFocusInfo(clientId, date), getTalkNotes(clientId), getClientAlertBoard(clientId)])
   const toolBtn = 'inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-bold text-ink-2 hover:bg-brand-soft'
 
   return (
@@ -45,6 +47,8 @@ export default async function MemoPage({ params }: { params: Promise<{ sessionId
       previous={prev && prevData && !isEmptyDrawing(prevData) ? { label: `前回（${mdw(fromDbDate(prev.date))}）の手書きメモ`, data: prevData } : null}
       info={<FocusBar variant="line" info={focus} clientId={clientId} base={date} />}
       toolbarExtra={
+        <>
+        <ClientAlertsButton board={alertBoard} clientId={clientId} clientName={session.client.name} className={toolBtn} />
         <TalkSheetButton
           title={`${session.client.name} さんの会話メモ`}
           className={toolBtn}
@@ -55,6 +59,7 @@ export default async function MemoPage({ params }: { params: Promise<{ sessionId
           update={updateTalkAction.bind(null, clientId)}
           remove={deleteTalkAction.bind(null, clientId)}
         />
+        </>
       }
     />
   )

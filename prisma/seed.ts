@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { PrismaClient, type Prisma } from '@prisma/client'
 import { hashPassword } from 'better-auth/crypto'
 import { DEFAULT_SETTINGS } from '../lib/calc/settings'
-import { addDays, todayYmd, toDbDate, type Ymd } from '../lib/dates'
+import { addDays, fromDbDate, todayYmd, toDbDate, weekStartOf, type Ymd } from '../lib/dates'
 import { detailKey, type QAnswers } from '../lib/questionnaire'
 import { drawingThumb, parseDrawing } from '../lib/drawing'
 
@@ -478,6 +478,72 @@ async function seedDemoMemos(trainerId: string | null) {
   }
 }
 
+/**
+ * デモでお知らせを見られるようにする（SEED_DEMO=1 のとき1回だけ。AppSetting "demo:alerts" に印を残す）
+ * - 花子さん：直近20日の体重を横ばいに（停滞）、週ごとの食事の数字をほぼ同じに（食事の変化なし）、気になる会話メモ
+ * - 太郎さん：週ごとの食事の数字（変化あり）
+ * - 自分で作るお知らせの見本
+ */
+async function seedDemoAlerts(trainerId: string | null) {
+  if (process.env.SEED_DEMO !== '1') return
+  if (await prisma.appSetting.findUnique({ where: { key: 'demo:alerts' } })) return
+  const today = todayYmd()
+  const find = (name: string) => prisma.client.findFirst({ where: { name }, select: { id: true } })
+  const [hanako, taro, misaki] = await Promise.all([find('デモ 花子'), find('デモ 太郎'), find('デモ 美咲')])
+  if (!hanako || !taro) return console.log('alerts: デモ顧客がいないため投入しない')
+
+  // 花子さん：停滞（直近20日の体重を、それより前の最低体重より少し上で横ばいに。最近の記録も足す）
+  const logs = await prisma.bodyLog.findMany({ where: { clientId: hanako.id, weightKg: { not: null }, date: { gte: toDbDate(addDays(today, -90)) } }, orderBy: { date: 'asc' } })
+  const cut = addDays(today, -20)
+  const before = logs.filter((l) => fromDbDate(l.date) < cut).map((l) => l.weightKg!)
+  if (before.length) {
+    const floor = Math.min(...before)
+    const rand = rng(77)
+    const flat = () => Math.round((floor + 0.2 + rand() * 0.5) * 10) / 10
+    for (const l of logs.filter((x) => fromDbDate(x.date) >= cut)) await prisma.bodyLog.update({ where: { id: l.id }, data: { weightKg: flat() } })
+    for (const d of [-3, -1]) {
+      const date = toDbDate(addDays(today, d))
+      await prisma.bodyLog.upsert({ where: { clientId_date: { clientId: hanako.id, date } }, update: { weightKg: flat() }, create: { clientId: hanako.id, date, weightKg: flat() } })
+    }
+  }
+
+  // 週ごとの食事の数字（先週から3週分）
+  const week = (i: number) => toDbDate(addDays(weekStartOf(today), -7 * i))
+  const put = async (clientId: string, rows: Array<[number, number, number, number, number, number]>) => {
+    for (const [i, targetKcal, avgKcal, proteinG, fatG, carbsG] of rows) {
+      const weekStart = week(i)
+      await prisma.nutritionWeek.upsert({ where: { clientId_weekStart: { clientId, weekStart } }, update: {}, create: { clientId, weekStart, targetKcal, avgKcal, proteinG, fatG, carbsG, updatedById: trainerId } })
+    }
+  }
+  await put(hanako.id, [
+    [3, 1600, 1735, 80, 57, 210],
+    [2, 1600, 1710, 83, 58, 206],
+    [1, 1600, 1720, 82, 58, 205],
+  ])
+  await put(taro.id, [
+    [3, 1900, 2150, 120, 70, 240],
+    [2, 1900, 1980, 125, 64, 230],
+    [1, 1900, 1890, 128, 60, 215],
+  ])
+
+  await prisma.talkNote.create({
+    data: { clientId: hanako.id, date: toDbDate(addDays(today, -2)), kind: 'negative', text: '体重が落ちなくて焦っていると話していた。体脂肪率は下がっていることを伝えた', createdById: trainerId },
+  })
+
+  const reminders: Array<{ clientId: string; text: string; trigger: string; due: Ymd; level: string }> = [
+    { clientId: taro.id, text: '体組成（InBody）を測る', trigger: 'next_visit', due: today, level: 'info' },
+    { clientId: taro.id, text: '旅行前に目標と減量ペースを見直す', trigger: 'date', due: addDays(today, 5), level: 'info' },
+    { clientId: hanako.id, text: '夜勤明けの食事の選び方を資料で渡す', trigger: 'date', due: addDays(today, -1), level: 'warn' },
+  ]
+  if (misaki) reminders.push({ clientId: misaki.id, text: '休会明けの予定を電話で確認する', trigger: 'date', due: today, level: 'info' })
+  for (const r of reminders) {
+    await prisma.reminder.create({ data: { clientId: r.clientId, text: r.text, trigger: r.trigger, dueDate: toDbDate(r.due), level: r.level, createdById: trainerId } })
+  }
+
+  await prisma.appSetting.create({ data: { key: 'demo:alerts', value: { at: today } } })
+  console.log(`alerts: デモのお知らせを用意（自分で作るお知らせ ${reminders.length}件）`)
+}
+
 async function main() {
   await seedSettings()
   await seedExercises()
@@ -486,6 +552,7 @@ async function main() {
   await seedDemo(ownerId ?? demoUserId)
   await seedDemoTalk(ownerId ?? demoUserId)
   await seedDemoMemos(ownerId ?? demoUserId)
+  await seedDemoAlerts(ownerId ?? demoUserId)
 }
 
 main()

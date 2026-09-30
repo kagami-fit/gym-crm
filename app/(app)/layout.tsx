@@ -1,4 +1,7 @@
+import { Suspense } from 'react'
 import { AppNav } from '@/components/AppNav'
+import { NavBell } from '@/components/alerts/NavBell'
+import { NavBellCount } from '@/components/alerts/NavBellCount'
 import { isDemo } from '@/lib/demo'
 import { requireUser } from '@/lib/session'
 
@@ -6,7 +9,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await requireUser()
   return (
     <div className="xl:flex">
-      <AppNav userName={user.name} role={user.role ?? 'staff'} />
+      <AppNav
+        userName={user.name}
+        role={user.role ?? 'staff'}
+        bell={
+          <Suspense fallback={<NavBell count={null} level={null} />}>
+            <NavBellCount userId={user.id} role={user.role ?? 'staff'} />
+          </Suspense>
+        }
+        bellSide={
+          <Suspense fallback={<NavBell count={null} level={null} variant="side" />}>
+            <NavBellCount userId={user.id} role={user.role ?? 'staff'} variant="side" />
+          </Suspense>
+        }
+      />
       <main className="min-w-0 flex-1 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5 sm:px-6 xl:px-8 xl:py-8">
         <div className="mx-auto max-w-[1280px]">
           {isDemo() && (

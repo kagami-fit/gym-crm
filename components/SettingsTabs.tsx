@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 const TABS = [
   { href: '/settings', label: '計算式・減量ペース' },
   { href: '/settings/exercises', label: '種目マスタ' },
+  { href: '/settings/alerts', label: 'お知らせ' },
   { href: '/settings/staff', label: 'スタッフ' },
 ]
 

@@ -44,6 +44,12 @@ export function addMonthsKey(key: string, n: number): string {
   return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`
 }
 
+/** その日を含む週の月曜日 */
+export function weekStartOf(ymd: Ymd): Ymd {
+  const dow = toDbDate(ymd).getUTCDay() // 0=日
+  return addDays(ymd, dow === 0 ? -6 : 1 - dow)
+}
+
 export function weekday(ymd: Ymd): string {
   return WEEKDAYS[toDbDate(ymd).getUTCDay()]
 }

@@ -30,6 +30,8 @@ model User {
   clients       Client[]
   trainings     TrainingSession[]
   talkNotes     TalkNote[]
+  reminders     Reminder[]
+  alertActions  AlertAction[]
 
   @@map("user")
 }
@@ -121,6 +123,9 @@ model Client {
   sessions          TrainingSession[]
   questionnaire     Questionnaire?
   talkNotes         TalkNote[]
+  reminders         Reminder[]
+  alertActions      AlertAction[]
+  nutritionWeeks    NutritionWeek[]
 
   @@index([status])
   @@index([kana])
@@ -272,4 +277,76 @@ model AppSetting {
   value       Json
   updatedById String?
   updatedAt   DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// お知らせ（アラート）
+// 自動のお知らせ（停滞・伸びていない種目など）はデータから毎回計算し、対応（AlertAction）だけを保存する。
+// 自分で作るお知らせ（Reminder）はトレーナーが書いて保存する。条件と段階の設定は AppSetting の "alerts"
+// ─────────────────────────────────────────────
+
+/// 自分で作るお知らせ（トレーナーがお客様ごとに自由に書く）
+model Reminder {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  text        String
+  /// date（日付を指定）/ next_visit（次の来店時）
+  trigger     String    @default("date")
+  /// date：知らせる日／next_visit：作った日（この日より後に来店したら知らせる）
+  dueDate     DateTime  @db.Date
+  /// info（黄・気づき）/ warn（橙・要対応）/ alert（赤・相談）
+  level       String    @default("info")
+  /// open / done
+  status      String    @default("open")
+  snoozeUntil DateTime? @db.Date
+  doneAt      DateTime?
+  doneNote    String?
+  doneById    String?
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId, status])
+}
+
+/// 自動のお知らせへの対応（対応した／あとで／このお客様では止める・再開）。fingerprint（状況）が変わるとまた出る
+model AlertAction {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// plateau / noProgress / dietFlat / noVisit / behindPace / talk（lib/alerts/rules.ts）
+  rule        String
+  /// 状況を表す文字列（止める・再開は "*"）
+  fingerprint String
+  /// done / snooze / mute / unmute
+  action      String
+  until       DateTime? @db.Date
+  note        String?
+  byId        String?
+  by          User?     @relation(fields: [byId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([clientId, rule])
+}
+
+/// 週ごとの食事の数字（ヒアリングで手入力。停滞のお知らせにも使う）
+model NutritionWeek {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// その週の月曜日
+  weekStart   DateTime @db.Date
+  /// 設定カロリー（目標）
+  targetKcal  Float?
+  /// 平均カロリー（実績）
+  avgKcal     Float?
+  proteinG    Float?
+  fatG        Float?
+  carbsG      Float?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([clientId, weekStart])
 }

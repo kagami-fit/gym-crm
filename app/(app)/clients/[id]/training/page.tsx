@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ChevronDown, History, NotebookPen, PenLine, Plus } from 'lucide-react'
+import { ClientAlerts } from '@/components/alerts/ClientAlerts'
 import { FocusBar } from '@/components/client/FocusBar'
 import { SessionEditor } from '@/components/client/SessionEditor'
 import { SessionTable } from '@/components/client/SessionTable'
@@ -9,6 +10,7 @@ import { MetricCharts, VolumeCharts } from '@/components/charts/TrainingCharts'
 import { Badge, EmptyState, Notice, Section, buttonClass } from '@/components/ui'
 import { resolveBaseDate } from '@/lib/base-date'
 import { summarize } from '@/lib/calc/training'
+import { getClientAlertBoard } from '@/lib/data/alerts'
 import { getClient } from '@/lib/data/clients'
 import { getFocusInfo } from '@/lib/data/focus'
 import { getCalcSettings } from '@/lib/data/settings'
@@ -41,7 +43,15 @@ export default async function TrainingPage({ params, searchParams }: { params: P
   const sp = await searchParams
   const base = resolveBaseDate(sp.date)
   const today = todayYmd()
-  const [client, settings, sessions, exercises, focus, talk] = await Promise.all([getClient(id), getCalcSettings(), getSessions(id), getExercises(true), getFocusInfo(id, base), getTalkNotes(id)])
+  const [client, settings, sessions, exercises, focus, talk, alertBoard] = await Promise.all([
+    getClient(id),
+    getCalcSettings(),
+    getSessions(id),
+    getExercises(true),
+    getFocusInfo(id, base),
+    getTalkNotes(id),
+    getClientAlertBoard(id),
+  ])
   const upToBase = sessions.filter((s) => s.date <= base)
   const q = sp.date ? `?date=${sp.date}` : ''
   const editing = sp.edit === 'new' ? null : sessions.find((s) => s.id === sp.edit) ?? null
@@ -97,6 +107,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
             <TalkSheetButton {...talkProps} title={`${client.name} さんの会話メモ`} className={barBtnLight} />
           </>
         }
+        alerts={<ClientAlerts board={alertBoard} clientId={id} clientName={client.name} />}
       />
 
       <div className="space-y-5">

@@ -96,7 +96,22 @@ function Cautions({ info, open }: { info: FocusInfo; open: boolean }) {
  * line：手書きメモの画面の見出しの下に出す1行
  * 「詳しく」で、なりたい姿・目標のメモ・問診の詳細まで広げて表示する。
  */
-export function FocusBar({ info, clientId, base, variant = 'bar', actions }: { info: FocusInfo; clientId: string; base: Ymd; variant?: 'bar' | 'line'; actions?: React.ReactNode }) {
+export function FocusBar({
+  info,
+  clientId,
+  base,
+  variant = 'bar',
+  actions,
+  alerts,
+}: {
+  info: FocusInfo
+  clientId: string
+  base: Ymd
+  variant?: 'bar' | 'line'
+  actions?: React.ReactNode
+  /** そのお客様のお知らせ（帯の最後の行に出す） */
+  alerts?: React.ReactNode
+}) {
   const [open, setOpen] = useState(false)
   const q = `?date=${base}`
   const toggle = (
@@ -142,6 +157,7 @@ export function FocusBar({ info, clientId, base, variant = 'bar', actions }: { i
           )}
         </div>
         {links && <div className="col-span-2">{links}</div>}
+        {alerts && <div className="col-span-2 min-w-0 pt-0.5">{alerts}</div>}
       </div>
     )
   }
@@ -168,6 +184,7 @@ export function FocusBar({ info, clientId, base, variant = 'bar', actions }: { i
         </div>
         <div className="justify-self-end">{toggle}</div>
         {links && <div className="col-span-2">{links}</div>}
+        {alerts && <div className="col-span-2 min-w-0 pt-0.5">{alerts}</div>}
       </div>
     </div>
   )

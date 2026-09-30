@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 
 const ITEMS = [
   { href: '/clients', label: '顧客一覧', short: '顧客', icon: Users },
-  { href: '/simulator', label: '体験シミュレーター', short: 'シミュレーター', icon: Calculator },
+  { href: '/simulator', label: '体験シミュレーター', short: '体験', icon: Calculator },
   { href: '/settings', label: '設定', short: '設定', icon: Settings },
 ]
 
@@ -16,7 +16,7 @@ const ITEMS = [
  * iPad（縦・横とも）とスマホは上部の横並びメニュー、パソコンの広い画面（1280px以上）だけ左のサイドバー。
  * ホーム画面に追加して全画面で開いたときのために、上の安全領域（ノッチ・時計の部分）をあける。
  */
-export function AppNav({ userName, role }: { userName: string; role: string }) {
+export function AppNav({ userName, role, bell, bellSide }: { userName: string; role: string; bell?: React.ReactNode; bellSide?: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -33,24 +33,25 @@ export function AppNav({ userName, role }: { userName: string; role: string }) {
           <img src="/resole-logo.svg" alt="Resole" className="h-9 xl:h-11" />
           <span className="en hidden text-xs text-ink-3 sm:block xl:mt-2">Client Management</span>
         </Link>
-        <nav className="ml-auto flex gap-1 xl:hidden" aria-label="メニュー">
+        <nav className="ml-auto flex items-center gap-0.5 xl:hidden" aria-label="メニュー">
           {ITEMS.map(({ href, label, short, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(`${href}/`)
             return (
               <Link
                 key={href}
                 href={href}
-                className={cn('flex h-11 items-center gap-2 rounded-full px-3.5 text-sm font-bold text-ink-2 hover:bg-brand-soft sm:px-4', active && 'bg-brand text-ink hover:bg-brand')}
+                className={cn('flex h-11 items-center gap-2 whitespace-nowrap rounded-full px-3 text-sm font-bold text-ink-2 hover:bg-brand-soft sm:px-3.5', active && 'bg-brand text-ink hover:bg-brand')}
                 aria-current={active ? 'page' : undefined}
                 aria-label={label}
               >
                 <Icon className="size-5" aria-hidden />
-                <span className="hidden md:inline">{label}</span>
-                <span className="hidden sm:inline md:hidden">{short}</span>
+                <span className="hidden lg:inline">{label}</span>
+                <span className="hidden sm:inline lg:hidden">{short}</span>
               </Link>
             )
           })}
-          <button type="button" onClick={logout} className="flex h-11 items-center gap-2 rounded-full px-3 text-sm font-bold text-ink-3 hover:bg-brand-soft" aria-label="ログアウト">
+          {bell}
+          <button type="button" onClick={logout} className="flex h-11 items-center gap-2 whitespace-nowrap rounded-full px-3 text-sm font-bold text-ink-3 hover:bg-brand-soft" aria-label="ログアウト">
             <LogOut className="size-5" aria-hidden />
             <span className="hidden lg:inline">ログアウト</span>
           </button>
@@ -74,6 +75,7 @@ export function AppNav({ userName, role }: { userName: string; role: string }) {
             </Link>
           )
         })}
+        {bellSide}
       </nav>
       <div className="mt-auto hidden border-t border-line px-6 py-5 xl:block">
         <p className="truncate text-sm font-bold text-ink">{userName}</p>
