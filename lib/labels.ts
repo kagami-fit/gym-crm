@@ -40,3 +40,37 @@ export const TALK_KINDS = [
 export type TalkKind = (typeof TALK_KINDS)[number]['key']
 export const isTalkKind = (v: unknown): v is TalkKind => TALK_KINDS.some((k) => k.key === v)
 export const talkKindOf = (key: string) => TALK_KINDS.find((k) => k.key === key) ?? TALK_KINDS[0]
+
+/** 期（フェーズ）の名前の候補と、グラフの帯の色（帯には必ず名前も出す） */
+/**
+ * 期の色。体重（金）・体脂肪率（青）のグラフの後ろに帯で敷くので、その2色とかぶらない色にしている
+ * （となり合う期どうしは色覚の多様性でも見分けられる差。帯には期の名前も書く）
+ */
+export const PHASE_PRESETS = [
+  { name: '自律神経期', color: '#c4497a' },
+  { name: 'ピラティス期', color: '#1baf7a' },
+] as const
+/** 候補にない名前の期に順に使う色 */
+const PHASE_EXTRA_COLORS = ['#8a63d2', '#6a6456']
+
+/** 期の名前 → 色（候補にない名前は、出てきた順に色を割り当てる） */
+export function phaseColors(names: string[]): Map<string, string> {
+  const out = new Map<string, string>()
+  let extra = 0
+  for (const n of names) {
+    if (out.has(n)) continue
+    const preset = PHASE_PRESETS.find((p) => p.name === n)
+    out.set(n, preset ? preset.color : PHASE_EXTRA_COLORS[extra++ % PHASE_EXTRA_COLORS.length])
+  }
+  return out
+}
+
+/** 宿題の結果 */
+export const HOMEWORK_STATUS = {
+  open: { label: '未確認', tone: 'neutral' },
+  done: { label: 'できた', tone: 'ok' },
+  partial: { label: '一部', tone: 'warn' },
+  not_done: { label: 'できなかった', tone: 'danger' },
+} as const
+export type HomeworkStatus = keyof typeof HOMEWORK_STATUS
+export const isHomeworkStatus = (v: unknown): v is HomeworkStatus => typeof v === 'string' && v in HOMEWORK_STATUS

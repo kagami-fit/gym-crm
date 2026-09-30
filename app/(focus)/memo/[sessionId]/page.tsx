@@ -4,6 +4,7 @@ import { FocusBar } from '@/components/client/FocusBar'
 import { TalkSheetButton } from '@/components/client/TalkNotes'
 import { DrawingPad } from '@/components/drawing/DrawingPad'
 import { getClientAlertBoard } from '@/lib/data/alerts'
+import { getHomework } from '@/lib/data/homework'
 import { getFocusInfo } from '@/lib/data/focus'
 import { getTalkNotes } from '@/lib/data/talk'
 import { emptyDrawing, isEmptyDrawing, parseDrawing } from '@/lib/drawing'
@@ -35,7 +36,7 @@ export default async function MemoPage({ params }: { params: Promise<{ sessionId
   })
   const prevData = prev?.drawing ? parseDrawing(prev.drawing.data) : null
   const clientId = session.clientId
-  const [focus, talk, alertBoard] = await Promise.all([getFocusInfo(clientId, date), getTalkNotes(clientId), getClientAlertBoard(clientId)])
+  const [focus, talk, alertBoard, homework] = await Promise.all([getFocusInfo(clientId, date), getTalkNotes(clientId), getClientAlertBoard(clientId), getHomework(clientId)])
   const toolBtn = 'inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-bold text-ink-2 hover:bg-brand-soft'
 
   return (
@@ -48,7 +49,7 @@ export default async function MemoPage({ params }: { params: Promise<{ sessionId
       info={<FocusBar variant="line" info={focus} clientId={clientId} base={date} />}
       toolbarExtra={
         <>
-        <ClientAlertsButton board={alertBoard} clientId={clientId} clientName={session.client.name} className={toolBtn} />
+        <ClientAlertsButton board={alertBoard} homework={homework} base={date} clientId={clientId} clientName={session.client.name} className={toolBtn} />
         <TalkSheetButton
           title={`${session.client.name} さんの会話メモ`}
           className={toolBtn}

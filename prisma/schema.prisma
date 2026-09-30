@@ -126,6 +126,10 @@ model Client {
   reminders         Reminder[]
   alertActions      AlertAction[]
   nutritionWeeks    NutritionWeek[]
+  homeworks         Homework[]
+  monthlyThemes     MonthlyTheme[]
+  phases            ClientPhase[]
+  ansMeasurements   AnsMeasurement[]
 
   @@index([status])
   @@index([kana])
@@ -349,4 +353,76 @@ model NutritionWeek {
   updatedAt   DateTime @updatedAt
 
   @@unique([clientId, weekStart])
+}
+
+// ─────────────────────────────────────────────
+// カルテ・顧客ステップ
+// ─────────────────────────────────────────────
+
+/// 宿題（お客様に出した Todo）。次の来店で「できた／一部／できなかった」を確認する
+model Homework {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  text        String
+  assignedOn  DateTime  @db.Date
+  /// open（未確認）/ done（できた）/ partial（一部）/ not_done（できなかった）
+  status      String    @default("open")
+  checkedOn   DateTime? @db.Date
+  note        String?
+  createdById String?
+  checkedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId, status])
+}
+
+/// 月ごとのテーマ（月のテーマ・トレーニングテーマ）
+model MonthlyTheme {
+  id            String   @id @default(cuid())
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// YYYY-MM
+  month         String
+  theme         String?
+  trainingTheme String?
+  updatedById   String?
+  updatedAt     DateTime @updatedAt
+
+  @@unique([clientId, month])
+}
+
+/// お客様の期（自律神経期・ピラティス期など）。体重のグラフに色分けで重ねる
+model ClientPhase {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name        String
+  startDate   DateTime  @db.Date
+  /// 空なら続いている（次の期の開始日の前日までとして扱う）
+  endDate     DateTime? @db.Date
+  note        String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId, startDate])
+}
+
+/// 自律神経の測定結果（測定器から出る PDF などをそのまま保存）
+model AnsMeasurement {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  measuredOn  DateTime @db.Date
+  fileName    String
+  mimeType    String
+  size        Int
+  data        Bytes
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([clientId, measuredOn])
 }

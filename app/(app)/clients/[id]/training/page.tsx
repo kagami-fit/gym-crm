@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ChevronDown, History, NotebookPen, PenLine, Plus } from 'lucide-react'
+import { Activity, ChevronDown, History, NotebookPen, PenLine, Plus } from 'lucide-react'
 import { ClientAlerts } from '@/components/alerts/ClientAlerts'
 import { FocusBar } from '@/components/client/FocusBar'
 import { SessionEditor } from '@/components/client/SessionEditor'
@@ -11,6 +11,8 @@ import { Badge, EmptyState, Notice, Section, buttonClass } from '@/components/ui
 import { resolveBaseDate } from '@/lib/base-date'
 import { summarize } from '@/lib/calc/training'
 import { getClientAlertBoard } from '@/lib/data/alerts'
+import { getAnsMeasurements } from '@/lib/data/ans'
+import { getHomework } from '@/lib/data/homework'
 import { getClient } from '@/lib/data/clients'
 import { getFocusInfo } from '@/lib/data/focus'
 import { getCalcSettings } from '@/lib/data/settings'
@@ -43,7 +45,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
   const sp = await searchParams
   const base = resolveBaseDate(sp.date)
   const today = todayYmd()
-  const [client, settings, sessions, exercises, focus, talk, alertBoard] = await Promise.all([
+  const [client, settings, sessions, exercises, focus, talk, alertBoard, homework, ans] = await Promise.all([
     getClient(id),
     getCalcSettings(),
     getSessions(id),
@@ -51,7 +53,11 @@ export default async function TrainingPage({ params, searchParams }: { params: P
     getFocusInfo(id, base),
     getTalkNotes(id),
     getClientAlertBoard(id),
+    getHomework(id),
+    getAnsMeasurements(id),
   ])
+  const ansByDate = new Map<string, typeof ans>()
+  for (const m of ans) ansByDate.set(m.measuredOn, [...(ansByDate.get(m.measuredOn) ?? []), m])
   const upToBase = sessions.filter((s) => s.date <= base)
   const q = sp.date ? `?date=${sp.date}` : ''
   const editing = sp.edit === 'new' ? null : sessions.find((s) => s.id === sp.edit) ?? null
@@ -107,7 +113,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
             <TalkSheetButton {...talkProps} title={`${client.name} さんの会話メモ`} className={barBtnLight} />
           </>
         }
-        alerts={<ClientAlerts board={alertBoard} clientId={id} clientName={client.name} />}
+        alerts={<ClientAlerts board={alertBoard} homework={homework} base={base} clientId={id} clientName={client.name} />}
       />
 
       <div className="space-y-5">
@@ -179,6 +185,12 @@ export default async function TrainingPage({ params, searchParams }: { params: P
                           </p>
                         )}
                         {s.memo && <p className="text-sm text-ink-2">メモ：{s.memo}</p>}
+                        {ansByDate.get(s.date)?.map((m) => (
+                          <a key={m.id} href={`/api/ans/${m.id}`} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#c4497a]/10 px-3 text-xs font-bold text-[#9c2f5c] hover:bg-[#c4497a]/20">
+                            <Activity className="size-3.5" aria-hidden />
+                            自律神経の測定結果を開く
+                          </a>
+                        ))}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <Link href={`/memo/${s.id}`} className={buttonClass.small}>

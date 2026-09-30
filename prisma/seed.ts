@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { PrismaClient, type Prisma } from '@prisma/client'
 import { hashPassword } from 'better-auth/crypto'
 import { DEFAULT_SETTINGS } from '../lib/calc/settings'
-import { addDays, fromDbDate, todayYmd, toDbDate, weekStartOf, type Ymd } from '../lib/dates'
+import { addDays, addMonthsKey, fromDbDate, monthKey, todayYmd, toDbDate, weekStartOf, type Ymd } from '../lib/dates'
 import { detailKey, type QAnswers } from '../lib/questionnaire'
 import { drawingThumb, parseDrawing } from '../lib/drawing'
 
@@ -544,6 +544,111 @@ async function seedDemoAlerts(trainerId: string | null) {
   console.log(`alerts: デモのお知らせを用意（自分で作るお知らせ ${reminders.length}件）`)
 }
 
+/**
+ * デモで顧客ステップ・宿題を見られるようにする（SEED_DEMO=1 のとき1回だけ。AppSetting "demo:steps" に印を残す）
+ * 日付は各お客様の入会日・来店日から決める（デモ顧客を作った日と、この関数を実行した日がずれても合うように）
+ * - 期：太郎さん 自律神経期→ピラティス期→筋力アップ期（名前を自由につけた例）、花子さん 自律神経期→ピラティス期、美咲さん 休会前まで
+ * - 月ごとのテーマ（来月の分は空けておく）
+ * - 宿題：確認待ちと、これまでの結果
+ * - 自律神経の測定結果（見本の PDF）を来店日に
+ */
+async function seedDemoSteps(trainerId: string | null) {
+  if (process.env.SEED_DEMO !== '1') return
+  if (await prisma.appSetting.findUnique({ where: { key: 'demo:steps' } })) return
+  const find = (name: string) => prisma.client.findFirst({ where: { name }, select: { id: true, joinedOn: true } })
+  const [taro, hanako, misaki] = await Promise.all([find('デモ 太郎'), find('デモ 花子'), find('デモ 美咲')])
+  if (!taro?.joinedOn || !hanako?.joinedOn) return console.log('steps: デモ顧客がいないため投入しない')
+  const visits = async (clientId: string) =>
+    (await prisma.trainingSession.findMany({ where: { clientId }, orderBy: { date: 'asc' }, select: { date: true } })).map((x) => fromDbDate(x.date))
+  /** その日以降で最初の来店日（なければその日） */
+  const visitFrom = (list: Ymd[], day: Ymd) => list.find((d) => d >= day) ?? day
+
+  // ── 期
+  const phase = (clientId: string, name: string, start: Ymd, end: Ymd | null = null, note?: string) =>
+    prisma.clientPhase.create({ data: { clientId, name, startDate: toDbDate(start), endDate: end ? toDbDate(end) : null, note: note ?? null, createdById: trainerId } })
+  const tj = fromDbDate(taro.joinedOn)
+  const hj = fromDbDate(hanako.joinedOn)
+  await phase(taro.id, '自律神経期', tj, null, '睡眠5〜6時間・デスクワークで肩が上がりやすい。まず呼吸と睡眠から')
+  await phase(taro.id, 'ピラティス期', addDays(tj, 42), null, '睡眠が6.5時間まで伸びたので移行')
+  await phase(taro.id, '筋力アップ期', addDays(tj, 105), null, '期の名前は自由につけられる例')
+  await phase(hanako.id, '自律神経期', hj, null, '夜勤で睡眠が乱れやすいので長めに')
+  await phase(hanako.id, 'ピラティス期', addDays(hj, 49))
+  if (misaki?.joinedOn) {
+    const mj = fromDbDate(misaki.joinedOn)
+    const mv = await visits(misaki.id)
+    await phase(misaki.id, '自律神経期', mj)
+    await phase(misaki.id, 'ピラティス期', addDays(mj, 28), mv[mv.length - 1] ?? addDays(mj, 110), '休会のため、いったん終了')
+  }
+
+  // ── 月ごとのテーマ（入会月から今月まで。古い月から順に）
+  const themes = async (clientId: string, joined: Ymd, rows: Array<[string, string]>) => {
+    const first = monthKey(joined)
+    const now = monthKey(todayYmd())
+    for (let i = 0; i < rows.length; i++) {
+      const month = addMonthsKey(first, i)
+      if (month > now) break
+      await prisma.monthlyTheme.create({ data: { clientId, month, theme: rows[i][0], trainingTheme: rows[i][1], updatedById: trainerId } })
+    }
+  }
+  await themes(taro.id, tj, [
+    ['睡眠と呼吸を整える', '呼吸と体幹を安定させる'],
+    ['朝の過ごし方を整える', '股関節を動かせるようにする'],
+    ['座り姿勢を意識して過ごす', 'ピラティスで背骨を動かす'],
+    ['食事のリズムを崩さない', '脚の筋力を上げる'],
+    ['飲み会の翌日にリセットする', 'スクワットの重さを伸ばす'],
+    ['目標65kgに向けて食事を見直す', '背中とお尻の筋力アップ'],
+  ])
+  await themes(hanako.id, hj, [
+    ['夜勤明けの睡眠を確保する', '呼吸と肩まわりをゆるめる'],
+    ['寝る前のスマホを減らす', '骨盤まわりを安定させる'],
+    ['甘いものとのつきあい方', 'ピラティスで姿勢を整える'],
+    ['体重より体脂肪率を見る', 'お尻と背中を使えるようにする'],
+  ])
+
+  // ── 宿題（出した日・確認した日は来店日に合わせる）
+  const hw = async (clientId: string, list: Ymd[], rows: Array<{ text: string; ago: number; status?: string; note?: string }>) => {
+    for (const r of rows) {
+      // ago：何回前の来店で出したか（0＝最後の来店）。確認はその次の来店
+      const i = Math.max(0, list.length - 1 - r.ago)
+      const assignedOn = list[i] ?? todayYmd()
+      const checkedOn = r.status ? (list[i + 1] ?? assignedOn) : null
+      await prisma.homework.create({
+        data: { clientId, text: r.text, assignedOn: toDbDate(assignedOn), status: r.status ?? 'open', checkedOn: checkedOn ? toDbDate(checkedOn) : null, note: r.note ?? null, createdById: trainerId, checkedById: r.status ? trainerId : null },
+      })
+    }
+  }
+  const tv = await visits(taro.id)
+  const hv = await visits(hanako.id)
+  await hw(taro.id, tv, [
+    { text: '寝る前の深呼吸 3分', ago: 30, status: 'done' },
+    { text: '腸腰筋のストレッチ（左右30秒）', ago: 20, status: 'not_done', note: '仕事が忙しくてできなかった' },
+    { text: '1日8000歩', ago: 8, status: 'partial', note: '平日はできた。週末は5000歩くらい' },
+    { text: '飲み会の翌朝も体重を測る', ago: 3, status: 'done' },
+    { text: 'ヒップヒンジ 10回×2（毎日）', ago: 0 },
+  ])
+  await hw(hanako.id, hv, [
+    { text: '湯船に10分つかる', ago: 14, status: 'done' },
+    { text: '寝る前のスマホを30分前にやめる', ago: 9, status: 'partial', note: '夜勤明けの日はできなかった' },
+    { text: '階段を使う', ago: 4, status: 'done' },
+    { text: '寝る前ストレッチ5分', ago: 0 },
+    { text: '夜勤明けは甘いものを1つまで', ago: 0 },
+  ])
+
+  // ── 自律神経の測定結果（見本の PDF）。自律神経期のはじめと、最近の来店日に
+  const pdf = (n: number) => readFileSync(new URL(`./seed-data/ans-sample-${n}.pdf`, import.meta.url))
+  const ans = async (clientId: string, day: Ymd, n: number, note: string) => {
+    const data = pdf(n)
+    await prisma.ansMeasurement.create({ data: { clientId, measuredOn: toDbDate(day), fileName: `自律神経測定_${day}.pdf`, mimeType: 'application/pdf', size: data.length, data, note, createdById: trainerId } })
+  }
+  await ans(taro.id, visitFrom(tv, tj), 1, '初回。交感神経が優位')
+  if (tv.length) await ans(taro.id, tv[Math.max(0, tv.length - 2)], 2, '前回より副交感神経の値が上がった')
+  await ans(hanako.id, visitFrom(hv, hj), 1, '初回。夜勤明けで疲労感が強い')
+  if (hv.length) await ans(hanako.id, hv[hv.length - 1], 2, 'ピラティス期に入ってからの再測定')
+
+  await prisma.appSetting.create({ data: { key: 'demo:steps', value: { at: todayYmd() } } })
+  console.log('steps: デモの期・テーマ・宿題・自律神経の測定結果を用意')
+}
+
 async function main() {
   await seedSettings()
   await seedExercises()
@@ -553,6 +658,7 @@ async function main() {
   await seedDemoTalk(ownerId ?? demoUserId)
   await seedDemoMemos(ownerId ?? demoUserId)
   await seedDemoAlerts(ownerId ?? demoUserId)
+  await seedDemoSteps(ownerId ?? demoUserId)
 }
 
 main()

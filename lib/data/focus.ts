@@ -1,11 +1,13 @@
 import { progress } from '@/lib/calc/body'
 import { findPace } from '@/lib/calc/settings'
-import type { Ymd } from '@/lib/dates'
+import { prisma } from '@/lib/prisma'
+import { addDays, fromDbDate, monthKey, toDbDate, weekStartOf, type Ymd } from '@/lib/dates'
 import { alertsOf } from '@/lib/questionnaire'
 import { getGoals, getLatestBody, goalAt, resolveStartWeight } from './body'
 import { getClient } from './clients'
 import { getQuestionnaire } from './questionnaire'
 import { getCalcSettings } from './settings'
+import { getPhases, phaseAt } from './steps'
 
 /** トレーニング中にいつも見えるところに出す、お客様の目的・目標・注意事項 */
 export type FocusInfo = {
@@ -29,12 +31,30 @@ export type FocusInfo = {
   } | null
   /** 問診で「あり」だった項目 */
   cautions: Array<{ label: string; detail: string }>
+  /** 基準日の期（自律神経期など） */
+  phase: { name: string; color: string } | null
+  /** 基準日の月のテーマ */
+  month: { key: string; theme: string | null; trainingTheme: string | null } | null
+  /** 直近の週の食事の数字（3週間以内） */
+  nutrition: { weekStart: Ymd; targetKcal: number | null; avgKcal: number | null; proteinG: number | null; fatG: number | null; carbsG: number | null } | null
 }
 
 const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
 
 export async function getFocusInfo(clientId: string, base: Ymd): Promise<FocusInfo> {
-  const [client, q, goals, latest, settings] = await Promise.all([getClient(clientId), getQuestionnaire(clientId), getGoals(clientId), getLatestBody(clientId, base), getCalcSettings()])
+  const [client, q, goals, latest, settings, phases, theme, week] = await Promise.all([
+    getClient(clientId),
+    getQuestionnaire(clientId),
+    getGoals(clientId),
+    getLatestBody(clientId, base),
+    getCalcSettings(),
+    getPhases(clientId),
+    prisma.monthlyTheme.findUnique({ where: { clientId_month: { clientId, month: monthKey(base) } } }),
+    prisma.nutritionWeek.findFirst({
+      where: { clientId, weekStart: { lte: toDbDate(base), gte: toDbDate(addDays(weekStartOf(base), -21)) }, OR: [{ avgKcal: { not: null } }, { targetKcal: { not: null } }] },
+      orderBy: { weekStart: 'desc' },
+    }),
+  ])
   const answers = q?.answers ?? {}
   const qPurposes = Array.isArray(answers.purposes) ? answers.purposes.filter((p) => p !== 'その他') : []
 
@@ -63,5 +83,11 @@ export async function getFocusInfo(clientId: string, base: Ymd): Promise<FocusIn
     deadline: text(answers.deadline),
     goal: g,
     cautions: q ? alertsOf(q.answers) : [],
+    phase: (() => {
+      const p = phaseAt(phases, base)
+      return p ? { name: p.name, color: p.color } : null
+    })(),
+    month: theme && (theme.theme || theme.trainingTheme) ? { key: theme.month, theme: theme.theme, trainingTheme: theme.trainingTheme } : null,
+    nutrition: week ? { weekStart: fromDbDate(week.weekStart), targetKcal: week.targetKcal, avgKcal: week.avgKcal, proteinG: week.proteinG, fatG: week.fatG, carbsG: week.carbsG } : null,
   }
 }

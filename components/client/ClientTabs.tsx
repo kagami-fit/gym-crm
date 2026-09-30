@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 const TABS = [
   { href: '', label: '概要' },
   { href: '/body', label: '体重・目標' },
+  { href: '/steps', label: 'ステップ' },
   { href: '/training', label: 'トレーニング' },
   { href: '/talk', label: '会話メモ' },
   { href: '/meals', label: '食事メモ' },
@@ -29,7 +30,7 @@ export function ClientTabs({ clientId }: { clientId: string }) {
             key={t.label}
             href={`${base}${t.href}${date ? `?date=${date}` : ''}`}
             className={cn(
-              'flex min-h-12 flex-none items-center border-b-[3px] px-4 text-[15px] font-bold text-ink-3 hover:text-ink',
+              'flex min-h-12 flex-none items-center whitespace-nowrap border-b-[3px] px-3 text-[15px] font-bold text-ink-3 hover:text-ink xl:px-4',
               active ? 'border-brand text-ink' : 'border-transparent',
             )}
             aria-current={active ? 'page' : undefined}

@@ -14,6 +14,7 @@ import { getClient } from '@/lib/data/clients'
 import { getMealMemos } from '@/lib/data/meals'
 import { getTalkNotes } from '@/lib/data/talk'
 import { getBodyView } from '@/lib/data/overview'
+import { getPhases } from '@/lib/data/steps'
 import { getDrawing, getSessions, lastRecordsBefore } from '@/lib/data/training'
 import { addDays, mdw, ymdJa } from '@/lib/dates'
 import { requireUser } from '@/lib/session'
@@ -28,7 +29,7 @@ export default async function ClientOverviewPage({ params, searchParams }: { par
   await requireUser()
   const { id } = await params
   const base = resolveBaseDate((await searchParams).date)
-  const [view, sessions, meals, talk] = await Promise.all([getBodyView(id, base), getSessions(id, base), getMealMemos(id, addDays(base, -6), base), getTalkNotes(id, { upTo: base, take: 6 })])
+  const [view, sessions, meals, talk, phases] = await Promise.all([getBodyView(id, base), getSessions(id, base), getMealMemos(id, addDays(base, -6), base), getTalkNotes(id, { upTo: base, take: 6 }), getPhases(id)])
   // 直近の「種目の記録がある回」と「手書きメモがある回」（同じ回のこともある）
   const latest = [...sessions].reverse().find((s) => s.rows.length > 0)
   const latestMemo = [...sessions].reverse().find((s) => s.hasDrawing)
@@ -83,7 +84,7 @@ export default async function ClientOverviewPage({ params, searchParams }: { par
         }
       >
         {view.points.length ? (
-          <WeightTrend points={view.points} base={base} targetWeight={view.goal?.targetWeightKg ?? null} />
+          <WeightTrend points={view.points} base={base} targetWeight={view.goal?.targetWeightKg ?? null} phases={phases} />
         ) : (
           <EmptyState title="まだ体重の記録がありません" action={{ href: `/clients/${id}/body${q}`, label: '体重を入力する' }} />
         )}

@@ -20,7 +20,7 @@ export type BodyView = {
   progress: Progress | null
   months: ProjectionRow[]
   weeks: ProjectionRow[]
-  /** 基準日から約6ヶ月前までの記録（グラフ用） */
+  /** 基準日から約1年前までの記録（グラフ用。「はじめから」の週平均は最大52週） */
   points: BodyPoint[]
 }
 
@@ -31,7 +31,7 @@ export async function getBodyView(clientId: string, base: Ymd): Promise<BodyView
     getCalcSettings(),
     getLatestBody(clientId, base),
     getGoals(clientId),
-    getBodyLogs(clientId, addDays(base, -200), base),
+    getBodyLogs(clientId, addDays(base, -370), base),
   ])
   const age = ageAt(client.birthDate ? fromDbDate(client.birthDate) : null, base)
   const gender = (client.gender as Gender | null) ?? null

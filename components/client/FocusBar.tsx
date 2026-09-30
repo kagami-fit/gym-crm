@@ -4,8 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, ChevronDown } from 'lucide-react'
 import { Badge } from '@/components/ui'
-import { md, type Ymd } from '@/lib/dates'
-import { num } from '@/lib/format'
+import { addDays, md, monthJa, type Ymd } from '@/lib/dates'
+import { int, num } from '@/lib/format'
 import type { FocusInfo } from '@/lib/data/focus'
 import { cn } from '@/lib/utils'
 
@@ -90,6 +90,51 @@ function Cautions({ info, open }: { info: FocusInfo; open: boolean }) {
   )
 }
 
+/** 今月：期（色つき）と月のテーマ・トレーニングテーマ */
+function Month({ info, open }: { info: FocusInfo; open: boolean }) {
+  const m = info.month
+  if (!info.phase && !m) return <span className="text-ink-3">未設定（ステップのタブで期とテーマを決められます）</span>
+  return (
+    <>
+      {info.phase && (
+        <span className="mr-1.5 inline-flex items-center gap-1 rounded-full px-2 align-[1px] text-xs font-bold leading-5 text-ink" style={{ background: `${info.phase.color}24` }}>
+          <span className="size-2 rounded-full" style={{ background: info.phase.color }} aria-hidden />
+          {info.phase.name}
+        </span>
+      )}
+      {m?.theme && <span className="font-bold">{m.theme}</span>}
+      {m?.trainingTheme && (
+        <>
+          {m.theme && <span className="text-ink-3"> ／ </span>}
+          <span className="text-ink-2">トレ：{m.trainingTheme}</span>
+        </>
+      )}
+      {open && m && <span className="block text-xs text-ink-3">{monthJa(m.key)}のテーマ</span>}
+    </>
+  )
+}
+
+/** 食事：直近の週の平均カロリーと設定の差・PFC */
+function Meal({ info, open }: { info: FocusInfo; open: boolean }) {
+  const n = info.nutrition
+  if (!n) return <span className="text-ink-3">未入力（食事メモのタブで週ごとに入れられます）</span>
+  const diff = n.avgKcal != null && n.targetKcal != null ? n.avgKcal - n.targetKcal : null
+  const pfc = [n.proteinG != null ? `P${int(n.proteinG)}` : null, n.fatG != null ? `F${int(n.fatG)}` : null, n.carbsG != null ? `C${int(n.carbsG)}` : null].filter(Boolean).join(' ')
+  return (
+    <>
+      <span className="num font-bold">{n.avgKcal != null ? int(n.avgKcal) : '—'}</span>
+      <span className="text-ink-2">／設定 </span>
+      <span className="num">{n.targetKcal != null ? int(n.targetKcal) : '—'}</span>
+      <span className="text-ink-2">kcal</span>
+      {diff != null && <span className={cn('num ml-1 font-bold', diff > 0 ? 'text-warn' : 'text-ok')}>{`${diff > 0 ? '+' : ''}${int(diff)}`}</span>}
+      {pfc && <span className="num ml-1.5 text-ink-2">{pfc}</span>}
+      <span className="num ml-1.5 text-xs text-ink-3">
+        {md(n.weekStart)}〜{open ? md(addDays(n.weekStart, 6)) : ''}
+      </span>
+    </>
+  )
+}
+
 /**
  * お客様の目的・目標・注意事項を、トレーニング中にいつも見えるところに出す。
  * bar：トレーニングのページの上に固定する帯（右に手書きメモ・会話メモのボタン）
@@ -131,6 +176,12 @@ export function FocusBar({
       <Link href={`/clients/${clientId}/profile${q}`} className="text-brand-ink underline-offset-2 hover:underline">
         台帳を見る
       </Link>
+      <Link href={`/clients/${clientId}/steps${q}`} className="text-brand-ink underline-offset-2 hover:underline">
+        期・テーマを変える
+      </Link>
+      <Link href={`/clients/${clientId}/meals${q}`} className="text-brand-ink underline-offset-2 hover:underline">
+        食事の数字を入れる
+      </Link>
     </p>
   )
 
@@ -156,13 +207,23 @@ export function FocusBar({
             </div>
           )}
         </div>
+        {open && (
+          <div className="col-span-2 flex min-w-0 flex-col gap-y-0.5">
+            <Row label="今月" open={open}>
+              <Month info={info} open={open} />
+            </Row>
+            <Row label="食事" open={open}>
+              <Meal info={info} open={open} />
+            </Row>
+          </div>
+        )}
         {links && <div className="col-span-2">{links}</div>}
         {alerts && <div className="col-span-2 min-w-0 pt-0.5">{alerts}</div>}
       </div>
     )
   }
 
-  // 1行目：目的＋ボタン／2行目：目標（横幅いっぱい。予定との差まで見えるように）／3行目：注意＋「詳しく」
+  // 1行目：目的＋ボタン／2行目：目標（横幅いっぱい。予定との差まで見えるように）／3行目：今月（期・テーマ）と食事／4行目：注意＋「詳しく」／5行目：お知らせ・宿題
   return (
     <div className="no-print sticky top-[var(--client-tabs-h)] z-20 -mx-4 -mt-5 mb-4 border-b border-line bg-page/95 px-4 py-1.5 backdrop-blur sm:-mx-6 sm:px-6 xl:-mx-8 xl:px-8">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-sm leading-6">
@@ -173,6 +234,14 @@ export function FocusBar({
         <div className="col-span-2 min-w-0">
           <Row label="目標" open={open}>
             <Goal info={info} open={open} />
+          </Row>
+        </div>
+        <div className={cn('col-span-2 grid min-w-0 gap-x-4 gap-y-0.5', open ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_minmax(0,1fr)]')}>
+          <Row label="今月" open={open}>
+            <Month info={info} open={open} />
+          </Row>
+          <Row label="食事" open={open}>
+            <Meal info={info} open={open} />
           </Row>
         </div>
         <div className="min-w-0">
