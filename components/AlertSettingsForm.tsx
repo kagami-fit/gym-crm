@@ -53,7 +53,7 @@ export function AlertSettingsForm({ settings, canEdit, action }: { settings: Ale
   return (
     <form action={formAction} className="space-y-4">
       <p className="text-sm text-ink-2">お知らせは3段階で出します（黄＝気づき：帯に小さく／橙＝要対応：一覧の上と顧客一覧に印／赤＝相談：オーナーと相談）。値が大きくなるほど重い段階です。</p>
-      <Block name="plateau" title="体重の停滞" description="最低体重を何日更新していないか（減量の目標があるお客様。最近10日の記録がないときは出さない）" enabled={settings.plateau.enabled} disabled={d}>
+      <Block name="plateau" title="体重の停滞" description="最低体重を何日更新していないか（食事方針が減量のお客様だけ。最近10日の記録がないときは出さない）" enabled={settings.plateau.enabled} disabled={d}>
         <Steps name="plateau.days" values={settings.plateau.days} unit="日" step={1} disabled={d} />
       </Block>
       <Block name="noProgress" title="伸びていない種目" description="今やっている種目で、同じ重さ×回数が何回続いたか" enabled={settings.noProgress.enabled} disabled={d}>
@@ -84,7 +84,7 @@ export function AlertSettingsForm({ settings, canEdit, action }: { settings: Ale
       <Block name="noVisit" title="来店があいている" description="最後の来店から何日たったか（在籍中のお客様）" enabled={settings.noVisit.enabled} disabled={d}>
         <Steps name="noVisit.days" values={settings.noVisit.days} unit="日" step={1} disabled={d} />
       </Block>
-      <Block name="behindPace" title="予定ペースより遅れ" description="目標の減量ペースどおりなら今この体重、との差" enabled={settings.behindPace.enabled} disabled={d}>
+      <Block name="behindPace" title="予定ペースより遅れ" description="減量ペースどおりなら今この体重、との差（食事方針が減量のお客様だけ）" enabled={settings.behindPace.enabled} disabled={d}>
         <Steps name="behindPace.kg" values={settings.behindPace.kg} unit="kg" step={0.1} disabled={d} />
       </Block>
       <Block name="talk" title="気になる会話メモ" description="「ネガティブ」「身体の変化」の会話メモを、書いてから何日間知らせるか（黄で出す）" enabled={settings.talk.enabled} disabled={d}>
@@ -94,6 +94,9 @@ export function AlertSettingsForm({ settings, canEdit, action }: { settings: Ale
             <span className="text-ink-2">日間</span>
           </span>
         </label>
+      </Block>
+      <Block name="overdue" title="予定日を過ぎている" description="コーフラックスの終了予定日・食事方針やフェーズの見直し予定日・目標日を何日過ぎたか（在籍中のお客様）" enabled={settings.overdue.enabled} disabled={d}>
+        <Steps name="overdue.days" values={settings.overdue.days} unit="日" step={1} disabled={d} />
       </Block>
       {canEdit && (
         <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">

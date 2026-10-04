@@ -2,6 +2,8 @@ import { progress } from '@/lib/calc/body'
 import { findPace } from '@/lib/calc/settings'
 import { prisma } from '@/lib/prisma'
 import { addDays, fromDbDate, monthKey, toDbDate, weekStartOf, type Ymd } from '@/lib/dates'
+import { policyLabel } from '@/lib/labels'
+import { isLossPolicy } from '@/lib/plan'
 import { alertsOf } from '@/lib/questionnaire'
 import { getGoals, getLatestBody, goalAt, resolveStartWeight } from './body'
 import { getClient } from './clients'
@@ -17,21 +19,29 @@ export type FocusInfo = {
   wish: string | null
   /** 期限・目標にしているイベント（問診票） */
   deadline: string | null
+  /** 基準日の食事方針と目標 */
   goal: {
-    targetWeightKg: number
+    /** 食事方針（lib/labels.ts の DIET_POLICIES の key）と名前 */
+    policy: string
+    policyLabel: string
+    targetWeightKg: number | null
     paceName: string | null
     note: string | null
     currentWeightKg: number | null
     currentDate: Ymd | null
-    /** 目標まであと何kg（増やす目標は増やす量）。達成していれば 0 */
+    /** 目標まであと何kg（増やす目標は増やす量）。達成していれば 0。減量のときだけ（ほかの方針は null） */
     remainingKg: number | null
     gain: boolean
-    /** 予定ペースより何kg先行しているか（マイナスは遅れ。減量の目標のときだけ） */
+    /** 予定ペースより何kg先行しているか（マイナスは遅れ。食事方針が減量のときだけ） */
     aheadKg: number | null
+    /** 終了予定日（コーフラックス）・見直し予定日・目標日 */
+    endDate: Ymd | null
+    reviewDate: Ymd | null
+    targetDate: Ymd | null
   } | null
   /** 問診で「あり」だった項目 */
   cautions: Array<{ label: string; detail: string }>
-  /** 基準日の期（自律神経期など） */
+  /** 基準日のフェーズ（フェーズ1など） */
   phase: { name: string; color: string } | null
   /** 基準日の月のテーマ */
   month: { key: string; theme: string | null; trainingTheme: string | null } | null
@@ -61,20 +71,38 @@ export async function getFocusInfo(clientId: string, base: Ymd): Promise<FocusIn
   const goal = goalAt(goals, base)
   let g: FocusInfo['goal'] = null
   if (goal) {
-    const pace = findPace(settings, goal.paceKey)
+    // 減量ペース・予定ペースとの差は、食事方針が減量のときだけ
+    const loss = isLossPolicy(goal)
+    const pace = loss ? findPace(settings, goal.paceKey) : null
     const cur = latest.weight
+    const target = goal.targetWeightKg
     const startWeight = await resolveStartWeight(clientId, goal)
-    const gain = startWeight != null ? goal.targetWeightKg > startWeight : cur != null && goal.targetWeightKg > cur.value
+    const gain = target != null && (startWeight != null ? target > startWeight : cur != null && target > cur.value)
     let remainingKg: number | null = null
     let aheadKg: number | null = null
-    if (cur) {
-      remainingKg = Math.max(0, gain ? goal.targetWeightKg - cur.value : cur.value - goal.targetWeightKg)
+    // 「あと何kg」は減量のときだけ（コーフラックス・フェーズ1の方針では、いま減らしていないので出さない）
+    if (cur && target != null && loss) {
+      remainingKg = Math.max(0, gain ? target - cur.value : cur.value - target)
       if (!gain && pace && startWeight != null) {
-        const pr = progress(settings, { startDate: goal.startDate, startWeightKg: startWeight, targetWeightKg: goal.targetWeightKg, pace, baseDate: base, currentWeightKg: cur.value })
+        const pr = progress(settings, { startDate: goal.startDate, startWeightKg: startWeight, targetWeightKg: target, pace, baseDate: base, currentWeightKg: cur.value })
         aheadKg = pr.aheadKg
       }
     }
-    g = { targetWeightKg: goal.targetWeightKg, paceName: pace?.name ?? null, note: goal.note, currentWeightKg: cur?.value ?? null, currentDate: cur?.date ?? null, remainingKg, gain, aheadKg }
+    g = {
+      policy: goal.policy,
+      policyLabel: policyLabel(goal.policy, goal.policyName),
+      targetWeightKg: target,
+      paceName: pace?.name ?? null,
+      note: goal.note,
+      currentWeightKg: cur?.value ?? null,
+      currentDate: cur?.date ?? null,
+      remainingKg,
+      gain,
+      aheadKg,
+      endDate: goal.endDate,
+      reviewDate: goal.reviewDate,
+      targetDate: goal.targetDate,
+    }
   }
 
   return {

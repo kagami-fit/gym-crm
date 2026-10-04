@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { NotebookPen } from 'lucide-react'
-import { BasicData, ChangeGoalLink, GoalProgress, ProjectionSummary } from '@/components/client/BodyBlocks'
+import { BasicData, ChangeGoalLink, ProjectionSummary } from '@/components/client/BodyBlocks'
 import { MealWeekView } from '@/components/client/MealWeekView'
 import { TalkKindBadge } from '@/components/client/TalkKindBadge'
 import { DrawingView } from '@/components/drawing/DrawingView'
@@ -8,15 +8,21 @@ import { SessionTable } from '@/components/client/SessionTable'
 import { ProjectionChart } from '@/components/charts/ProjectionChart'
 import { VolumeCharts } from '@/components/charts/TrainingCharts'
 import { WeightTrend } from '@/components/charts/WeightTrend'
+import { PlanSummary } from '@/components/plan/PlanSummary'
+import { AnsLatest, ChangeHistory, ConditionSummary, MovementSummary } from '@/components/plan/Summaries'
+import { WeightEvaluation } from '@/components/plan/WeightEvaluation'
 import { EmptyState, Section } from '@/components/ui'
 import { resolveBaseDate } from '@/lib/base-date'
 import { getClient } from '@/lib/data/clients'
 import { getMealMemos } from '@/lib/data/meals'
+import { getNutritionWeeks, recentWeeks } from '@/lib/data/nutrition'
 import { getTalkNotes } from '@/lib/data/talk'
 import { getBodyView } from '@/lib/data/overview'
-import { getPhases } from '@/lib/data/steps'
+import { getPlanView, getWeightReviews, latestMovements } from '@/lib/data/plan'
 import { getDrawing, getSessions, lastRecordsBefore } from '@/lib/data/training'
 import { addDays, mdw, ymdJa } from '@/lib/dates'
+import { policyLabel } from '@/lib/labels'
+import { changeHistory } from '@/lib/plan'
 import { requireUser } from '@/lib/session'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -25,27 +31,80 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: `${c.name}｜概要` }
 }
 
+/**
+ * 概要。上から、現在地 → 自律神経 → 体調の経過 → 動作 → 体重の推移と方針に合わせた評価 → 変更の履歴（2026-10-04 の整理の並び）。
+ * そのあとに会話メモ・カロリーの計算・予測（減量のときだけ）・トレーニング・食事メモ。
+ */
 export default async function ClientOverviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ date?: string }> }) {
   await requireUser()
   const { id } = await params
   const base = resolveBaseDate((await searchParams).date)
-  const [view, sessions, meals, talk, phases] = await Promise.all([getBodyView(id, base), getSessions(id, base), getMealMemos(id, addDays(base, -6), base), getTalkNotes(id, { upTo: base, take: 6 }), getPhases(id)])
+  const [view, plan, sessions, meals, talk, bodyNotes, reviews, nutrition] = await Promise.all([
+    getBodyView(id, base),
+    getPlanView(id, base),
+    getSessions(id, base),
+    getMealMemos(id, addDays(base, -6), base),
+    getTalkNotes(id, { upTo: base, take: 6 }),
+    getTalkNotes(id, { upTo: base, take: 3, kinds: ['body'] }),
+    getWeightReviews(id),
+    getNutritionWeeks(id, recentWeeks(base, 12)),
+  ])
   // 直近の「種目の記録がある回」と「手書きメモがある回」（同じ回のこともある）
   const latest = [...sessions].reverse().find((s) => s.rows.length > 0)
   const latestMemo = [...sessions].reverse().find((s) => s.hasDrawing)
   const memoData = latestMemo ? await getDrawing(latestMemo.id) : null
   const q = `?date=${base}`
+  const planHref = (anchor: string) => `/clients/${id}/plan${q}#${anchor}`
+  const loss = view.goal?.policy === 'loss'
+  const policies = [...plan.goals].reverse().map((g) => ({ start: g.startDate, label: policyLabel(g.policy, g.policyName) }))
 
   const linkClass = 'rounded-full bg-brand px-3 py-1 text-xs font-black text-ink hover:bg-brand-deep'
+  const planLink = (anchor: string, label: string) => (
+    <Link href={planHref(anchor)} className={linkClass}>
+      {label}
+    </Link>
+  )
 
   return (
     <div className="space-y-5">
-      <Section title="基本データ" en="Basic Data" aside={<span className="text-white/80">基準日 {ymdJa(base)}</span>}>
-        <BasicData view={view} clientId={id} />
+      <Section title="現在地" en="Now" aside={planLink('phase', '指導計画を開く')}>
+        <PlanSummary view={plan} />
       </Section>
 
-      <Section title="目標の進捗" en="Progress" aside={view.goal ? <ChangeGoalLink clientId={id} base={base} /> : undefined}>
-        <GoalProgress view={view} clientId={id} />
+      <Section title="自律神経（最新の評価）" en="ANS" aside={planLink('ans', '測定結果を入れる')}>
+        <AnsLatest latest={plan.ansNow.latest} previous={plan.ansNow.previous} emptyHref={planHref('ans')} />
+      </Section>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Section title="痛み・疲労・不調の経過" en="Condition" aside={planLink('condition', '体調チェック')}>
+          <ConditionSummary rows={plan.conditions} ans={plan.ans} bodyNotes={bodyNotes} emptyHref={planHref('condition')} />
+        </Section>
+        <Section title="動作の達成状況（ピラティス）" en="Movement" aside={planLink('movement', '評価を記録')}>
+          <MovementSummary latest={latestMovements(plan.movements, base)} />
+        </Section>
+      </div>
+
+      <Section
+        title="体重の推移と評価"
+        en="Body Trend"
+        aside={
+          <Link href={`/clients/${id}/body${q}`} className={linkClass}>
+            体重を入力
+          </Link>
+        }
+      >
+        <div className="space-y-5">
+          {view.points.length ? (
+            <WeightTrend points={view.points} base={base} targetWeight={loss ? (view.goal?.targetWeightKg ?? null) : null} phases={plan.phases} policies={policies} />
+          ) : (
+            <EmptyState title="まだ体重の記録がありません" action={{ href: `/clients/${id}/body${q}`, label: '体重を入力する' }} />
+          )}
+          <WeightEvaluation view={view} reviews={reviews} nutrition={Object.values(nutrition)} clientId={id} showProgress reviewHref={`/clients/${id}/body${q}#review`} />
+        </div>
+      </Section>
+
+      <Section title="フェーズ・食事方針の変更履歴" en="History" aside={planLink('policy', '食事方針を変える')}>
+        <ChangeHistory items={changeHistory(plan.phases, plan.goals)} />
       </Section>
 
       <Section
@@ -74,48 +133,39 @@ export default async function ClientOverviewPage({ params, searchParams }: { par
         )}
       </Section>
 
-      <Section
-        title="体重・体脂肪率の推移"
-        en="Body Trend"
-        aside={
-          <Link href={`/clients/${id}/body${q}`} className={linkClass}>
-            体重を入力
-          </Link>
-        }
-      >
-        {view.points.length ? (
-          <WeightTrend points={view.points} base={base} targetWeight={view.goal?.targetWeightKg ?? null} phases={phases} />
-        ) : (
-          <EmptyState title="まだ体重の記録がありません" action={{ href: `/clients/${id}/body${q}`, label: '体重を入力する' }} />
-        )}
+      <Section title="カロリーの計算" en="Basic Data" aside={<span className="text-white/80">基準日 {ymdJa(base)}</span>}>
+        <BasicData view={view} clientId={id} />
       </Section>
 
-      <Section
-        title="体重・体脂肪率の予測"
-        en="Forecast"
-        aside={
-          view.pace ? (
-            <span className="text-white/80">
-              減量ペース：{view.pace.name}（現体重の−{view.pace.percentPerMonth}%／月{view.pace.note ? `・${view.pace.note}` : ''}）
-            </span>
-          ) : undefined
-        }
-      >
-        {view.goal && view.weight && view.months.length ? (
-          <div className="space-y-4">
-            <ProjectionSummary view={view} />
-            <ProjectionChart
-              base={base}
-              current={{ weightKg: view.weight.value, bodyFatPct: view.bodyFat?.value ?? null, fatMassKg: view.plan.composition.fatMassKg }}
-              targetWeight={view.goal.targetWeightKg}
-              month={view.months}
-              week={view.weeks}
-            />
-          </div>
-        ) : (
-          <EmptyState title="体重と目標がそろうと予測が表示されます" action={{ href: `/clients/${id}/body${q}`, label: '体重・目標を入力する' }} />
-        )}
-      </Section>
+      {loss && (
+        <Section
+          title="体重・体脂肪率の予測（減量）"
+          en="Forecast"
+          aside={
+            view.pace ? (
+              <span className="flex flex-wrap items-center gap-2 text-white/80">
+                減量ペース：{view.pace.name}（現体重の−{view.pace.percentPerMonth}%／月{view.pace.note ? `・${view.pace.note}` : ''}）
+                <ChangeGoalLink clientId={id} base={base} />
+              </span>
+            ) : undefined
+          }
+        >
+          {view.goal?.targetWeightKg != null && view.weight && view.months.length ? (
+            <div className="space-y-4">
+              <ProjectionSummary view={view} />
+              <ProjectionChart
+                base={base}
+                current={{ weightKg: view.weight.value, bodyFatPct: view.bodyFat?.value ?? null, fatMassKg: view.plan.composition.fatMassKg }}
+                targetWeight={view.goal.targetWeightKg}
+                month={view.months}
+                week={view.weeks}
+              />
+            </div>
+          ) : (
+            <EmptyState title="体重と減量の目標がそろうと予測が表示されます" action={{ href: planHref('policy'), label: '食事方針・目標を見る' }} />
+          )}
+        </Section>
+      )}
 
       <Section
         title="トレーニング"

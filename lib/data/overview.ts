@@ -1,6 +1,7 @@
 import { plan, progress, projection, type Gender, type Plan, type Progress, type ProjectionRow } from '@/lib/calc/body'
 import { findPace, type CalcSettings, type Pace } from '@/lib/calc/settings'
 import { addDays, ageAt, fromDbDate, type Ymd } from '@/lib/dates'
+import { isLossPolicy } from '@/lib/plan'
 import { getClient } from './clients'
 import { getBodyLogs, getGoals, getLatestBody, goalAt, resolveStartWeight, type BodyPoint, type GoalRow, type Latest } from './body'
 import { getCalcSettings } from './settings'
@@ -13,8 +14,10 @@ export type BodyView = {
   gender: Gender | null
   weight: Latest
   bodyFat: Latest
+  /** 基準日に有効な食事方針と目標 */
   goal: GoalRow | null
   goals: GoalRow[]
+  /** 減量ペース（食事方針が減量のときだけ） */
   pace: Pace | null
   plan: Plan
   progress: Progress | null
@@ -36,7 +39,9 @@ export async function getBodyView(clientId: string, base: Ymd): Promise<BodyView
   const age = ageAt(client.birthDate ? fromDbDate(client.birthDate) : null, base)
   const gender = (client.gender as Gender | null) ?? null
   const goal = goalAt(goals, base)
-  const pace = findPace(settings, goal?.paceKey)
+  // 減量ペース（と予測・予定ペースとの差）は、食事方針が「減量」のときだけ使う
+  const loss = isLossPolicy(goal)
+  const pace = loss ? findPace(settings, goal?.paceKey) : null
 
   const p = plan(
     settings,
@@ -46,14 +51,14 @@ export async function getBodyView(clientId: string, base: Ymd): Promise<BodyView
 
   let months: ProjectionRow[] = []
   let weeks: ProjectionRow[] = []
-  if (goal && latest.weight && p.dailyDeficit != null) {
+  if (goal?.targetWeightKg != null && latest.weight && p.dailyDeficit != null) {
     const args = { baseDate: base, weightKg: latest.weight.value, fatMassKg: p.composition.fatMassKg, targetWeightKg: goal.targetWeightKg, dailyDeficit: p.dailyDeficit }
     months = projection(settings, args, 'month', 6)
     weeks = projection(settings, args, 'week', 10)
   }
 
   let prog: Progress | null = null
-  if (goal && pace && latest.weight) {
+  if (goal?.targetWeightKg != null && pace && latest.weight) {
     const startWeight = await resolveStartWeight(clientId, goal)
     if (startWeight != null) {
       prog = progress(settings, { startDate: goal.startDate, startWeightKg: startWeight, targetWeightKg: goal.targetWeightKg, pace, baseDate: base, currentWeightKg: latest.weight.value })

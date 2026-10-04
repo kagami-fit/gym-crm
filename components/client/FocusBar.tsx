@@ -4,8 +4,9 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, ChevronDown } from 'lucide-react'
 import { Badge } from '@/components/ui'
-import { addDays, md, monthJa, type Ymd } from '@/lib/dates'
-import { int, num } from '@/lib/format'
+import { addDays, diffDays, md, monthJa, type Ymd } from '@/lib/dates'
+import { int, num, signed } from '@/lib/format'
+import { phaseSub } from '@/lib/labels'
 import type { FocusInfo } from '@/lib/data/focus'
 import { cn } from '@/lib/utils'
 
@@ -39,35 +40,78 @@ function Purpose({ info, open }: { info: FocusInfo; open: boolean }) {
   )
 }
 
-function Goal({ info, open }: { info: FocusInfo; open: boolean }) {
+const daysLeft = (base: Ymd, d: Ymd) => {
+  const n = diffDays(base, d)
+  return n > 0 ? `あと${n}日` : n === 0 ? '今日' : `${-n}日過ぎ`
+}
+
+/** 方針：食事方針と目標（減量なら目標体重・あと何kg・予定ペースとの差、コーフラックスなら終了予定日、維持なら維持する体重） */
+function Goal({ info, open, base }: { info: FocusInfo; open: boolean; base: Ymd }) {
   const g = info.goal
-  if (!g) return <span className="text-ink-3">未設定（体重・目標タブで設定できます）</span>
+  if (!g) return <span className="text-ink-3">未設定（指導計画のタブで食事方針を決められます）</span>
   const reached = g.remainingKg != null && g.remainingKg <= 0.05
+  const current = g.currentWeightKg != null && (
+    <span className="text-ink-2">
+      （現在 <span className="num">{num(g.currentWeightKg)}kg</span>
+      {g.currentDate && <span className="num">・{md(g.currentDate)}</span>}）
+    </span>
+  )
   return (
     <>
-      <span className="num font-bold">{num(g.targetWeightKg)}kg</span>
-      {g.gain && <span>まで増やす</span>}
-      {g.remainingKg != null &&
-        (reached ? (
-          <Badge tone="ok" className="ml-1.5 align-middle">
-            目標達成
-          </Badge>
-        ) : (
-          <>
-            <span className="text-ink-3"> ／ </span>あと <span className="num font-bold">{num(g.remainingKg)}kg</span>
-          </>
-        ))}
-      {g.currentWeightKg != null && (
-        <span className="text-ink-2">
-          （現在 <span className="num">{num(g.currentWeightKg)}kg</span>
-          {g.currentDate && <span className="num">・{md(g.currentDate)}</span>}）
+      <span className="font-black">{g.policyLabel}</span>
+      {g.policy === 'reverse' && g.endDate && (
+        <span className={cn(g.endDate < base && 'font-bold text-warn')}>
+          ・終了予定 <span className="num">{md(g.endDate)}</span>（{daysLeft(base, g.endDate)}）
         </span>
       )}
-      {g.aheadKg != null && !reached && (
-        <span className={cn('font-bold', g.aheadKg >= 0 ? 'text-ok' : 'text-warn')}>
+      {g.policy === 'maintain' && g.targetWeightKg != null && (
+        <span>
           {' '}
-          予定より<span className="num">{num(Math.abs(g.aheadKg))}kg</span>
-          {g.aheadKg >= 0 ? '先行' : '遅れ'}
+          <span className="num font-bold">{num(g.targetWeightKg)}kg</span>
+          {g.currentWeightKg != null && <span className="num text-ink-2">（現在 {num(g.currentWeightKg)}kg・{signed(g.currentWeightKg - g.targetWeightKg)}）</span>}
+        </span>
+      )}
+      {g.policy !== 'maintain' && g.targetWeightKg != null && (
+        <>
+          <span className="text-ink-3"> ／ </span>
+          {g.policy !== 'loss' && <span className="text-ink-2">目標 </span>}
+          <span className="num font-bold">{num(g.targetWeightKg)}kg</span>
+          {g.gain && <span>まで増やす</span>}
+          {g.remainingKg != null &&
+            (reached ? (
+              <Badge tone="ok" className="ml-1.5 align-middle">
+                目標達成
+              </Badge>
+            ) : (
+              <>
+                <span className="text-ink-3"> ／ </span>あと <span className="num font-bold">{num(g.remainingKg)}kg</span>
+              </>
+            ))}
+        </>
+      )}
+      {g.policy !== 'maintain' && current}
+      {g.aheadKg != null && !reached && (
+        <span className={cn('font-bold', g.aheadKg > -0.05 ? 'text-ok' : 'text-warn')}>
+          {' '}
+          {Math.abs(g.aheadKg) < 0.05 ? (
+            '予定どおり'
+          ) : (
+            <>
+              予定より<span className="num">{num(Math.abs(g.aheadKg))}kg</span>
+              {g.aheadKg >= 0 ? '先行' : '遅れ'}
+            </>
+          )}
+        </span>
+      )}
+      {g.reviewDate && (open || g.reviewDate < base) && (
+        <span className={cn('text-ink-2', g.reviewDate < base && 'font-bold text-warn')}>
+          ・見直し <span className="num">{md(g.reviewDate)}</span>
+          {g.reviewDate < base && `（${daysLeft(base, g.reviewDate)}）`}
+        </span>
+      )}
+      {open && g.targetDate && (
+        <span className="text-ink-2">
+          ・目標日 <span className="num">{md(g.targetDate)}</span>（{daysLeft(base, g.targetDate)}）
         </span>
       )}
       {open && g.paceName && <span className="text-ink-2">・ペース {g.paceName}</span>}
@@ -90,16 +134,17 @@ function Cautions({ info, open }: { info: FocusInfo; open: boolean }) {
   )
 }
 
-/** 今月：期（色つき）と月のテーマ・トレーニングテーマ */
+/** 今月：フェーズ（色つき）と月のテーマ・トレーニングテーマ */
 function Month({ info, open, big }: { info: FocusInfo; open: boolean; big?: boolean }) {
   const m = info.month
-  if (!info.phase && !m) return <span className="text-ink-3">未設定（ステップのタブで期とテーマを決められます）</span>
+  if (!info.phase && !m) return <span className="text-ink-3">未設定（指導計画のタブでフェーズとテーマを決められます）</span>
   return (
     <>
       {info.phase && (
         <span className={cn('mr-1.5 inline-flex items-center gap-1 rounded-full align-[1px] font-bold text-ink', big ? 'px-2.5 text-sm leading-6' : 'px-2 text-xs leading-5')} style={{ background: `${info.phase.color}24` }}>
           <span className={cn('rounded-full', big ? 'size-2.5' : 'size-2')} style={{ background: info.phase.color }} aria-hidden />
           {info.phase.name}
+          {open && phaseSub(info.phase.name) && <span className="font-bold text-ink-2">（{phaseSub(info.phase.name)}）</span>}
         </span>
       )}
       {m?.theme && <span className="font-bold">{m.theme}</span>}
@@ -168,8 +213,8 @@ export function FocusBar({
   )
   const links = open && (
     <p className={cn('flex flex-wrap gap-x-4 gap-y-1 pt-1 font-bold', big ? 'text-sm' : 'text-xs')}>
-      <Link href={`/clients/${clientId}/body${q}`} className="text-brand-ink underline-offset-2 hover:underline">
-        目標を変える
+      <Link href={`/clients/${clientId}/plan${q}#policy`} className="text-brand-ink underline-offset-2 hover:underline">
+        食事方針・目標を変える
       </Link>
       <Link href={`/clients/${clientId}/questionnaire${q}`} className="text-brand-ink underline-offset-2 hover:underline">
         問診票を見る
@@ -177,8 +222,8 @@ export function FocusBar({
       <Link href={`/clients/${clientId}/profile${q}`} className="text-brand-ink underline-offset-2 hover:underline">
         台帳を見る
       </Link>
-      <Link href={`/clients/${clientId}/steps${q}`} className="text-brand-ink underline-offset-2 hover:underline">
-        期・テーマを変える
+      <Link href={`/clients/${clientId}/plan${q}`} className="text-brand-ink underline-offset-2 hover:underline">
+        指導計画を見る
       </Link>
       <Link href={`/clients/${clientId}/meals${q}`} className="text-brand-ink underline-offset-2 hover:underline">
         食事の数字を入れる
@@ -187,7 +232,7 @@ export function FocusBar({
   )
 
   if (variant === 'line') {
-    // 手書きメモの画面：1行目に目的、2行目に目標と注意（書く場所をなるべく広く残す）
+    // 手書きメモの画面：1行目に目的、2行目に方針と注意（書く場所をなるべく広く残す）
     return (
       <div className="mt-1 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 text-xs leading-5 sm:text-sm sm:leading-6">
         <Row label="目的" open={open}>
@@ -196,8 +241,8 @@ export function FocusBar({
         {toggle}
         <div className={cn('col-span-2 flex min-w-0 gap-x-4', open && 'flex-col gap-y-0.5')}>
           <div className="min-w-0 flex-1">
-            <Row label="目標" open={open}>
-              <Goal info={info} open={open} />
+            <Row label="方針" open={open}>
+              <Goal info={info} open={open} base={base} />
             </Row>
           </div>
           {info.cautions.length > 0 && (
@@ -224,7 +269,7 @@ export function FocusBar({
     )
   }
 
-  // 1行目：目的＋ボタン／2行目：目標（横幅いっぱい。予定との差まで見えるように）／3行目：今月（期・テーマ）と食事（iPad 縦では2行）／4行目：注意＋「詳しく」／5行目：お知らせ・宿題
+  // 1行目：目的＋ボタン／2行目：方針（食事方針と目標。横幅いっぱい。予定との差まで見えるように）／3行目：今月（フェーズ・テーマ）と食事（iPad 縦では2行）／4行目：注意＋「詳しく」／5行目：お知らせ・宿題
   return (
     <div className="no-print sticky top-[var(--client-tabs-h)] z-20 -mx-4 -mt-5 mb-4 border-b border-line bg-page/95 px-4 py-2.5 backdrop-blur sm:-mx-6 sm:px-6 xl:-mx-8 xl:px-8">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-base leading-7">
@@ -233,8 +278,8 @@ export function FocusBar({
         </Row>
         <div className="flex flex-wrap justify-end gap-2">{actions}</div>
         <div className="col-span-2 min-w-0">
-          <Row label="目標" open={open} big>
-            <Goal info={info} open={open} />
+          <Row label="方針" open={open} big>
+            <Goal info={info} open={open} base={base} />
           </Row>
         </div>
         {/* 今月と食事：横長の画面では横に並べ、iPad 縦などでは1行ずつ（途中で切れないように） */}

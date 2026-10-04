@@ -26,12 +26,13 @@ export default async function AlertsPage({ searchParams }: { searchParams: Promi
     </Link>
   )
   const rules = [
-    { on: settings.plateau.enabled, label: RULES.plateau.label, text: `最低体重を ${settings.plateau.days.join('／')} 日更新していない` },
+    { on: settings.plateau.enabled, label: RULES.plateau.label, text: `最低体重を ${settings.plateau.days.join('／')} 日更新していない（減量中）` },
     { on: settings.noProgress.enabled, label: RULES.noProgress.label, text: `同じ重さ×回数が ${settings.noProgress.counts.join('／')} 回続いた` },
     { on: settings.dietFlat.enabled, label: RULES.dietFlat.label, text: `体重が停滞し、食事の数字が ${settings.dietFlat.weeks} 週間ほぼ同じ（差 ${settings.dietFlat.pct}% 以内）` },
     { on: settings.noVisit.enabled, label: RULES.noVisit.label, text: `最後の来店から ${settings.noVisit.days.join('／')} 日（在籍中）` },
-    { on: settings.behindPace.enabled, label: RULES.behindPace.label, text: `予定ペースより ${settings.behindPace.kg.join('／')} kg 遅れ` },
+    { on: settings.behindPace.enabled, label: RULES.behindPace.label, text: `予定ペースより ${settings.behindPace.kg.join('／')} kg 遅れ（減量中）` },
     { on: settings.talk.enabled, label: RULES.talk.label, text: `ネガティブ・身体の変化の会話メモから ${settings.talk.days} 日間` },
+    { on: settings.overdue.enabled, label: RULES.overdue.label, text: `終了予定日・見直し予定日・目標日を ${settings.overdue.days.join('／')} 日過ぎた（在籍中）` },
   ]
 
   return (

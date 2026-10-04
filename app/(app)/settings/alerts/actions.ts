@@ -7,7 +7,7 @@ import { requireOwner } from '@/lib/session'
 import { alertSettingsSchema } from '@/lib/alerts/settings'
 import type { ActionState } from '@/components/SubmitButton'
 
-const LABELS: Record<string, string> = { plateau: '体重の停滞', noProgress: '伸びていない種目', dietFlat: '食事の変化なし', noVisit: '来店があいている', behindPace: '予定ペースより遅れ', talk: '気になる会話メモ' }
+const LABELS: Record<string, string> = { plateau: '体重の停滞', noProgress: '伸びていない種目', dietFlat: '食事の変化なし', noVisit: '来店があいている', behindPace: '予定ペースより遅れ', talk: '気になる会話メモ', overdue: '予定日を過ぎている' }
 
 /** お知らせの条件と段階を保存（オーナーのみ） */
 export async function saveAlertSettingsAction(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -22,6 +22,7 @@ export async function saveAlertSettingsAction(_prev: ActionState, fd: FormData):
     noVisit: { enabled: on('noVisit.enabled'), days: three('noVisit.days') },
     behindPace: { enabled: on('behindPace.enabled'), kg: three('behindPace.kg') },
     talk: { enabled: on('talk.enabled'), days: n('talk.days') },
+    overdue: { enabled: on('overdue.enabled'), days: three('overdue.days') },
   }
   const r = alertSettingsSchema.safeParse(raw)
   if (!r.success) {

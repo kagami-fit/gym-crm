@@ -10,7 +10,7 @@ const triple = (d: [number, number, number], min: number, max: number) =>
     .default(d)
 
 export const alertSettingsSchema = z.object({
-  /** 体重の停滞：最低体重を更新していない日数 */
+  /** 体重の停滞：最低体重を更新していない日数。食事方針が減量のときだけ */
   plateau: z.object({ enabled: z.boolean().default(true), days: triple([14, 21, 28], 3, 180) }).default({ enabled: true, days: [14, 21, 28] }),
   /** 伸びていない種目：同じ重さ×回数が続いた回数 */
   noProgress: z
@@ -20,10 +20,12 @@ export const alertSettingsSchema = z.object({
   dietFlat: z.object({ enabled: z.boolean().default(true), weeks: z.number().int().min(2).max(8).default(2), pct: z.number().min(1).max(20).default(5) }).default({ enabled: true, weeks: 2, pct: 5 }),
   /** 来店があいている：最後の来店からの日数（在籍中のお客様だけ） */
   noVisit: z.object({ enabled: z.boolean().default(true), days: triple([14, 21, 30], 3, 180) }).default({ enabled: true, days: [14, 21, 30] }),
-  /** 予定ペースより遅れ（kg） */
+  /** 予定ペースより遅れ（kg）。食事方針が減量のときだけ */
   behindPace: z.object({ enabled: z.boolean().default(true), kg: triple([1, 2, 3], 0.1, 20) }).default({ enabled: true, kg: [1, 2, 3] }),
   /** 気になる会話メモ：ネガティブ・身体の変化の会話メモを何日間知らせるか */
   talk: z.object({ enabled: z.boolean().default(true), days: z.number().int().min(1).max(60).default(7) }).default({ enabled: true, days: 7 }),
+  /** 予定日を過ぎている：コーフラックスの終了予定日・見直し予定日などを何日過ぎたか（在籍中のお客様だけ） */
+  overdue: z.object({ enabled: z.boolean().default(true), days: triple([1, 7, 14], 1, 180) }).default({ enabled: true, days: [1, 7, 14] }),
 })
 export type AlertSettings = z.infer<typeof alertSettingsSchema>
 

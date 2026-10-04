@@ -130,6 +130,9 @@ model Client {
   monthlyThemes     MonthlyTheme[]
   phases            ClientPhase[]
   ansMeasurements   AnsMeasurement[]
+  movementChecks    MovementCheck[]
+  conditionChecks   ConditionCheck[]
+  weightReviews     WeightReview[]
 
   @@index([status])
   @@index([kana])
@@ -150,21 +153,33 @@ model BodyLog {
   @@unique([clientId, date])
 }
 
-/// 目標（変更のたびに1件追加して履歴にする。開始日が基準日以前で最新のものが有効）
+/// 食事方針と目標（変更のたびに1件追加して履歴にする。開始日が基準日以前で最新のものが有効）
 model Goal {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   clientId        String
-  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  startDate       DateTime @db.Date
+  client          Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  startDate       DateTime  @db.Date
+  /// 食事方針（recovery 回復食 / balance バランス食 / other そのほか / reverse コーフラックス / loss 減量 / maintain 維持。lib/labels.ts の DIET_POLICIES）
+  policy          String    @default("loss")
+  /// 方針が「そのほか」のときの名前
+  policyName      String?
   startWeightKg   Float?
   startBodyFatPct Float?
-  targetWeightKg  Float
-  /// 設定の減量ペース（paces[].key）
-  paceKey         String
-  activityFactor  Float
+  /// 目標体重（減量）・維持したい体重（維持）。そのほかの方針では、お客様の最終的な目標体重（任意）
+  targetWeightKg  Float?
+  /// 設定の減量ペース（paces[].key）。減量のときだけ使う
+  paceKey         String?
+  activityFactor  Float?
+  /// お客様の目標日（方針を変えても引き継ぐ）
+  targetDate      DateTime? @db.Date
+  /// 終了予定日（コーフラックス）
+  endDate         DateTime? @db.Date
+  /// 方針を見直す予定日
+  reviewDate      DateTime? @db.Date
+  /// 理由・メモ
   note            String?
   createdById     String?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
 
   @@index([clientId, startDate])
 }
@@ -188,15 +203,15 @@ model MealMemo {
 
 /// 来店1回分のトレーニング（この日付が「来店日」になる）
 model TrainingSession {
-  id        String        @id @default(cuid())
+  id        String          @id @default(cuid())
   clientId  String
-  client    Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  date      DateTime      @db.Date
+  client    Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  date      DateTime        @db.Date
   trainerId String?
-  trainer   User?         @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+  trainer   User?           @relation(fields: [trainerId], references: [id], onDelete: SetNull)
   memo      String?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
   sets      TrainingSet[]
   drawing   SessionDrawing?
 
@@ -397,36 +412,105 @@ model MonthlyTheme {
   @@unique([clientId, month])
 }
 
-/// お客様の期（自律神経期・ピラティス期など）。体重のグラフに色分けで重ねる
+/// お客様のフェーズ（フェーズ1：体を整える／フェーズ2：目的に合わせて進める）。体重のグラフに色分けで重ねる
 model ClientPhase {
-  id          String    @id @default(cuid())
-  clientId    String
-  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  name        String
-  startDate   DateTime  @db.Date
-  /// 空なら続いている（次の期の開始日の前日までとして扱う）
-  endDate     DateTime? @db.Date
-  note        String?
-  createdById String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  clientId       String
+  client         Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name           String
+  startDate      DateTime  @db.Date
+  /// 空なら続いている（次のフェーズの開始日の前日までとして扱う）
+  endDate        DateTime? @db.Date
+  /// 見直し予定日
+  reviewDate     DateTime? @db.Date
+  /// 来店頻度（週1回・週2回 など）
+  visitFrequency String?
+  /// このフェーズにした理由（最初のフェーズは「この段階から始めた理由」）
+  note           String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([clientId, startDate])
 }
 
-/// 自律神経の測定結果（測定器から出る PDF などをそのまま保存）
+/// 自律神経の測定結果（condiView の測定票の PDF・写真をそのまま保存し、「活性度」の2本の棒を記録する）
 model AnsMeasurement {
+  id                   String   @id @default(cuid())
+  clientId             String
+  client               Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  measuredOn           DateTime @db.Date
+  fileName             String
+  mimeType             String
+  size                 Int
+  data                 Bytes
+  /// 交感神経（オレンジの棒）の数値と、グレーゾーンとの位置（low 低い / normal 基準内 / high 高い。空＝未確認）
+  sympathetic          Float?
+  sympatheticLevel     String?
+  /// 副交感神経（青の棒）の数値と位置
+  parasympathetic      Float?
+  parasympatheticLevel String?
+  /// フェーズ1の型（A〜D。対応が確定するまでは仮。空＝未確定）
+  ansType              String?
+  /// 評価メモ（疲労や症状など、数値と合わせて見た内容）
+  note                 String?
+  createdById          String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @default(now()) @updatedAt
+
+  @@index([clientId, measuredOn])
+}
+
+/// 動作の評価（ピラティスの達成状況）。評価のたびに1件ふえる（前の段階へ戻ったことも残る）
+model MovementCheck {
   id          String   @id @default(cuid())
   clientId    String
   client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  measuredOn  DateTime @db.Date
-  fileName    String
-  mimeType    String
-  size        Int
-  data        Bytes
+  date        DateTime @db.Date
+  /// 動き（lib/movements.ts の MOVEMENTS の key）
+  movement    String
+  /// untested 未評価 / practicing 練習中 / achieved 達成（左右がある動きは、左右から決める）
+  status      String
+  /// 動きごとの確認項目（左右・かかとの接地・腰の痛み など。lib/movements.ts）
+  checks      Json?
+  /// 実施条件
+  condition   String?
   note        String?
   createdById String?
   createdAt   DateTime @default(now())
 
-  @@index([clientId, measuredOn])
+  @@index([clientId, movement, date])
+}
+
+/// 体調チェック（本人の訴え）。1日1件。項目は lib/condition.ts
+model ConditionCheck {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  /// 項目 → none なし / mild 少し / strong 強い（答えていない項目は入れない）
+  items       Json
+  /// 痛みの部位
+  painArea    String?
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([clientId, date])
+}
+
+/// 体重の変化への担当者の評価（想定内／見直しが必要／評価保留）
+model WeightReview {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  /// expected 想定内 / review 見直しが必要 / hold 評価保留
+  verdict     String
+  reason      String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([clientId, date])
 }

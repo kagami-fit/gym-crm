@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Plus, Search } from 'lucide-react'
 import { LEVEL_STYLE } from '@/components/alerts/Level'
+import { PhaseChip } from '@/components/plan/Chips'
 import { Badge, EmptyState, Notice, PageHeader, StatusBadge, Value, buttonClass, inputClass } from '@/components/ui'
 import type { Level } from '@/lib/alerts/rules'
 import { getAlertBoard, summarizeByClient } from '@/lib/data/alerts'
@@ -48,7 +49,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <PageHeader title="顧客一覧" description="お客様を選ぶと、1人ずつのページ（体重・目標・トレーニング・食事メモ）が開きます">
+      <PageHeader title="顧客一覧" description="お客様を選ぶと、1人ずつのページ（指導計画・体重・トレーニング・食事メモ）が開きます">
         <Link href="/clients/new" className={buttonClass.primary}>
           <Plus className="size-4" aria-hidden />
           新規登録
@@ -86,7 +87,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
         {/* iPad 縦・スマホ：1人ずつのカード（どこを押してもその人のページへ） */}
         <ul className="grid gap-3 sm:grid-cols-2 lg:hidden">
           {rows.map((c) => {
-            const toGo = c.latestWeight && c.targetWeight != null ? c.latestWeight.value - c.targetWeight : null
+            const toGo = c.latestWeight && c.targetWeight != null && c.policy?.key !== 'maintain' ? c.latestWeight.value - c.targetWeight : null
             const since = c.lastVisit ? diffDays(c.lastVisit, today) : null
             return (
               <li key={c.id}>
@@ -103,6 +104,12 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                       <StatusBadge status={c.status} />
                     </span>
                   </div>
+                  {(c.phase || c.policy) && (
+                    <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                      {c.phase && <PhaseChip name={c.phase.name} color={c.phase.color} />}
+                      {c.policy && <span className="font-bold text-ink-2">{c.policy.label}</span>}
+                    </p>
+                  )}
                   <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-soft p-2.5 text-center">
                     <div>
                       <p className="text-[11px] font-bold text-ink-3">現体重</p>
@@ -130,11 +137,12 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           })}
         </ul>
         <div className="hidden overflow-x-auto rounded-2xl border border-line bg-white shadow-[0_4px_18px_rgba(80,60,0,0.05)] lg:block">
-          <table className="w-full min-w-[880px] text-sm">
+          <table className="w-full min-w-[960px] text-sm">
             <thead className="bg-dark text-left text-xs text-white">
               <tr>
                 <th className="px-4 py-3 font-bold">氏名</th>
                 <th className="px-3 py-3 font-bold">ステータス</th>
+                <th className="px-3 py-3 font-bold">フェーズ・方針</th>
                 <th className="px-3 py-3 font-bold">お知らせ</th>
                 <th className="px-3 py-3 font-bold">年齢・性別</th>
                 <th className="px-3 py-3 font-bold">担当</th>
@@ -147,7 +155,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
             </thead>
             <tbody className="divide-y divide-line">
               {rows.map((c) => {
-                const toGo = c.latestWeight && c.targetWeight != null ? c.latestWeight.value - c.targetWeight : null
+                const toGo = c.latestWeight && c.targetWeight != null && c.policy?.key !== 'maintain' ? c.latestWeight.value - c.targetWeight : null
                 const since = c.lastVisit ? diffDays(c.lastVisit, today) : null
                 return (
                   <tr key={c.id} className="group relative hover:bg-soft">
@@ -159,6 +167,16 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                     </td>
                     <td className="px-3 py-3">
                       <StatusBadge status={c.status} />
+                    </td>
+                    <td className="px-3 py-3">
+                      {c.phase || c.policy ? (
+                        <span className="flex flex-col items-start gap-0.5">
+                          {c.phase && <PhaseChip name={c.phase.name} color={c.phase.color} />}
+                          {c.policy && <span className="text-xs font-bold text-ink-2">{c.policy.label}</span>}
+                        </span>
+                      ) : (
+                        <span className="text-ink-3">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <AlertMark mark={marks.get(c.id)} />

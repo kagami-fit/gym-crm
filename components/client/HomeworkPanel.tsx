@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Check, Loader2, Minus, Plus, Trash2, X } from 'lucide-react'
-import { addHomeworkAction, checkHomeworkAction, deleteHomeworkAction } from '@/app/(app)/clients/[id]/steps/actions'
+import { addHomeworkAction, checkHomeworkAction, deleteHomeworkAction } from '@/app/(app)/clients/[id]/plan/actions'
 import { buttonClass, inputClass } from '@/components/ui'
 import type { HomeworkBoard, HomeworkRow } from '@/lib/data/homework'
 import { diffDays, md, mdw, type Ymd } from '@/lib/dates'

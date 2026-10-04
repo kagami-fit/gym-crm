@@ -9,10 +9,12 @@ import { num, signed } from '@/lib/format'
 
 type Point = { date: string; weightKg: number | null; bodyFatPct: number | null }
 type Period = '1w' | '1m' | '6m' | 'all'
-/** 期（自律神経期など）。until が null なら基準日まで続いている */
+/** フェーズ（フェーズ1・フェーズ2など）。until が null なら基準日まで続いている */
 export type ChartPhase = { name: string; start: string; until: string | null; color: string }
+/** 食事方針を変えた日（縦線と名前を出す） */
+export type ChartPolicy = { start: string; label: string }
 /** from・to：その行が表す期間（日・週・月） */
-type Row = { key: string; label: string; tip: string; weight: number | null; bodyFat: number | null; from: string; to: string; phase?: string }
+type Row = { key: string; label: string; tip: string; weight: number | null; bodyFat: number | null; from: string; to: string; phase?: string; policy?: string }
 
 const avg = (v: Array<number | null>) => {
   const x = v.filter((n): n is number => n != null)
@@ -50,7 +52,7 @@ function build(points: Point[], base: string, period: Period): { rows: Row[]; pr
   return { rows: days.slice(n).map(toRow), prev: days.slice(0, n).map(toRow) }
 }
 
-/** 期ごとに、グラフのどの行からどの行までを塗るか（行の期間と期が重なるところ） */
+/** フェーズごとに、グラフのどの行からどの行までを塗るか（行の期間とフェーズが重なるところ） */
 function phaseBands(rows: Row[], phases: ChartPhase[], base: string) {
   const bands = phases
     .map((p) => {
@@ -59,7 +61,7 @@ function phaseBands(rows: Row[], phases: ChartPhase[], base: string) {
       return idx.length ? { ...p, i1: idx[0], i2: idx[idx.length - 1] } : null
     })
     .filter((b): b is ChartPhase & { i1: number; i2: number } => b != null)
-  // 次の期がすぐ続くときは、帯のあいだにすき間ができないよう、次の期の最初の点までのばす
+  // 次のフェーズがすぐ続くときは、帯のあいだにすき間ができないよう、次のフェーズの最初の点までのばす
   return bands.map((b, k) => {
     const next = bands[k + 1]
     const i2 = next && next.i1 === b.i2 + 1 ? next.i1 : b.i2
@@ -67,15 +69,44 @@ function phaseBands(rows: Row[], phases: ChartPhase[], base: string) {
   })
 }
 
-export function WeightTrend({ points, base, targetWeight, phases = [], initialPeriod = '1m' }: { points: Point[]; base: string; targetWeight: number | null; phases?: ChartPhase[]; initialPeriod?: Period }) {
+export function WeightTrend({
+  points,
+  base,
+  targetWeight,
+  phases = [],
+  policies = [],
+  initialPeriod = '1m',
+}: {
+  points: Point[]
+  base: string
+  targetWeight: number | null
+  phases?: ChartPhase[]
+  policies?: ChartPolicy[]
+  initialPeriod?: Period
+}) {
   const [period, setPeriod] = useState<Period>(initialPeriod)
   const { rows, prev } = useMemo(() => {
     const b = build(points, base, period)
-    // 表で見るときにも期がわかるよう、行ごとに期の名前をつける（行の最後の日の期）
-    for (const r of b.rows) r.phase = [...phases].reverse().find((p) => p.start <= r.to && (p.until ?? base) >= r.from)?.name
+    // 表で見るときにもフェーズ・食事方針がわかるよう、行ごとに名前をつける（行の最後の日のフェーズ・方針）
+    for (const r of b.rows) {
+      r.phase = [...phases].reverse().find((p) => p.start <= r.to && (p.until ?? base) >= r.from)?.name
+      r.policy = [...policies].sort((a, b) => (a.start < b.start ? -1 : 1)).filter((p) => p.start <= r.to).at(-1)?.label
+    }
     return b
-  }, [points, base, period, phases])
+  }, [points, base, period, phases, policies])
   const bands = useMemo(() => phaseBands(rows, phases, base), [rows, phases, base])
+  // 食事方針を変えた日の縦線（その日を含む行に引く。表示している期間の中だけ）。
+  // 同じ方針のまま目標だけ変えた日は引かない。グラフの左はしの行は、その前から続いているので引かない
+  const marks = useMemo(() => {
+    const sorted = [...policies].sort((a, b) => (a.start < b.start ? -1 : 1))
+    const changes = sorted.filter((p, i) => i === 0 || sorted[i - 1].label !== p.label)
+    return changes
+      .map((p) => {
+        const i = rows.findIndex((x) => x.from <= p.start && p.start <= x.to)
+        return i > 0 ? { key: `${p.start}-${p.label}`, x: rows[i].label, label: p.label } : null
+      })
+      .filter((m): m is { key: string; x: string; label: string } => m != null)
+  }, [rows, policies])
   const hasFat = rows.some((r) => r.bodyFat != null)
   const hasWeight = rows.some((r) => r.weight != null)
   const showDots = period === '1w' || period === '6m'
@@ -95,23 +126,39 @@ export function WeightTrend({ points, base, targetWeight, phases = [], initialPe
 
   const table = (
     <DataTable
-      head={[period === '6m' ? '月' : period === 'all' ? '週' : '日付', '体重(kg)', '体脂肪率(%)', ...(phases.length ? ['期'] : [])]}
-      rows={[...rows].reverse().map((r) => [period === '6m' ? monthJa(r.key) : period === 'all' ? `${md(r.from)}〜${md(r.to)}` : mdw(r.key), num(r.weight), num(r.bodyFat), ...(phases.length ? [r.phase ?? '—'] : [])])}
+      head={[period === '6m' ? '月' : period === 'all' ? '週' : '日付', '体重(kg)', '体脂肪率(%)', ...(phases.length ? ['フェーズ'] : []), ...(policies.length ? ['食事方針'] : [])]}
+      rows={[...rows].reverse().map((r) => [
+        period === '6m' ? monthJa(r.key) : period === 'all' ? `${md(r.from)}〜${md(r.to)}` : mdw(r.key),
+        num(r.weight),
+        num(r.bodyFat),
+        ...(phases.length ? [r.phase ?? '—'] : []),
+        ...(policies.length ? [r.policy ?? '—'] : []),
+      ])}
     />
   )
-  // 期の色の帯（線の後ろに薄く。帯の左上に期の名前も出す。文字は読みやすいようインクの色）
+  // フェーズの色の帯（線の後ろに薄く。帯の左上にフェーズの名前も出す。文字は読みやすいようインクの色）
   const bandEls = bands.map((b) => (
     <ReferenceArea key={`${b.name}-${b.start}`} x1={b.x1} x2={b.x2} fill={b.color} fillOpacity={0.12} stroke="none" ifOverflow="hidden" label={{ value: b.name, position: 'insideTopLeft', fill: C.ink, fontSize: 11, fontWeight: 700 }} />
   ))
-  const legend = bands.length > 0 && (
+  // 食事方針を変えた日の縦線（名前は線の右下。上はフェーズの名前の場所）
+  const markEls = marks.map((m) => (
+    <ReferenceLine key={m.key} x={m.x} stroke={C.ink} strokeOpacity={0.55} strokeDasharray="3 3" strokeWidth={1} ifOverflow="hidden" label={{ value: m.label, position: 'insideBottomRight', fill: C.ink, fontSize: 11, fontWeight: 700 }} />
+  ))
+  const legend = (bands.length > 0 || marks.length > 0) && (
     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pt-1 text-xs text-ink-2">
-      <span className="font-bold">期：</span>
+      {bands.length > 0 && <span className="font-bold">フェーズ：</span>}
       {[...new Map(bands.map((b) => [b.name, b.color])).entries()].map(([name, color]) => (
         <span key={name} className="inline-flex items-center gap-1">
           <span className="inline-block h-3 w-4 rounded-sm ring-1 ring-inset" style={{ background: `${color}40`, ['--tw-ring-color' as string]: color }} aria-hidden />
           {name}
         </span>
       ))}
+      {marks.length > 0 && (
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-3 w-0 border-l border-dashed border-ink-2" aria-hidden />
+          食事方針を変えた日
+        </span>
+      )}
     </p>
   )
 
@@ -147,6 +194,7 @@ export function WeightTrend({ points, base, targetWeight, phases = [], initialPe
           <ResponsiveContainer width="100%" height={230}>
             <LineChart data={rows} margin={chartMargin}>
               {bandEls}
+              {markEls}
               <CartesianGrid vertical={false} stroke={C.grid} />
               {xAxis}
               <YAxis {...niceScale([...rows.map((r) => r.weight), targetWeight])} tick={axisTick} tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => num(v)} />
@@ -168,6 +216,7 @@ export function WeightTrend({ points, base, targetWeight, phases = [], initialPe
           <ResponsiveContainer width="100%" height={170}>
             <LineChart data={rows} margin={chartMargin}>
               {bandEls}
+              {markEls}
               <CartesianGrid vertical={false} stroke={C.grid} />
               {xAxis}
               <YAxis {...niceScale(rows.map((r) => r.bodyFat))} tick={axisTick} tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => num(v)} />

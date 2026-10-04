@@ -2,6 +2,7 @@
 import { diffDays, md, mdw, type Ymd } from '@/lib/dates'
 import { int, num } from '@/lib/format'
 import { talkKindOf } from '@/lib/labels'
+import type { OverdueItem } from '@/lib/plan'
 import type { AlertSettings } from './settings'
 
 /** info＝黄（気づき）／warn＝橙（要対応）／alert＝赤（相談） */
@@ -20,6 +21,7 @@ export const RULES = {
   noVisit: { label: '来店があいている', tab: '' },
   behindPace: { label: '予定ペースより遅れ', tab: 'body' },
   talk: { label: '気になる会話メモ', tab: 'talk' },
+  overdue: { label: '予定日を過ぎている', tab: 'plan' },
 } as const
 export type RuleKey = keyof typeof RULES
 export const isRule = (v: unknown): v is RuleKey => typeof v === 'string' && v in RULES
@@ -164,5 +166,24 @@ export function talk(notes: Array<{ id: string; date: Ymd; kind: string; text: s
     detail: `「${text}」（${md(n.date)}）`,
     fingerprint: n.id,
     since: n.date,
+  }
+}
+
+/**
+ * 予定日を過ぎている：コーフラックスの終了予定日・見直し予定日・目標日、フェーズの見直し予定日など（lib/plan.ts の overdueItems）。
+ * 一番過ぎている日数で段階を決める。予定日を決め直す・フェーズや方針を変えると消える（状況が変わるため）。
+ */
+export function overdue(items: OverdueItem[], s: AlertSettings['overdue']): AutoAlert | null {
+  const hits = items.filter((i) => levelOf(i.days, s.days))
+  if (!hits.length) return null
+  const top = hits[0]
+  const level = levelOf(top.days, s.days)!
+  return {
+    rule: 'overdue',
+    level,
+    title: hits.length === 1 ? `${top.label}を${top.days}日過ぎています` : `予定日を過ぎたものが${hits.length}件（${top.label}を${top.days}日過ぎ）`,
+    detail: hits.length > 1 ? hits.map((i) => `${i.label}：${i.days}日`).join('／') : '予定日を決め直すか、フェーズ・食事方針を変えてください',
+    fingerprint: `${hits.map((i) => i.key).join('|')}:${level}`,
+    since: top.date,
   }
 }

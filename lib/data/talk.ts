@@ -15,9 +15,9 @@ export function toTalkRow(r: Row): TalkNoteRow {
 }
 
 /** 新しい順（同じ日は後から書いたものが上） */
-export async function getTalkNotes(clientId: string, opts: { upTo?: Ymd; take?: number } = {}): Promise<TalkNoteRow[]> {
+export async function getTalkNotes(clientId: string, opts: { upTo?: Ymd; take?: number; kinds?: string[] } = {}): Promise<TalkNoteRow[]> {
   const rows = await prisma.talkNote.findMany({
-    where: { clientId, ...(opts.upTo ? { date: { lte: toDbDate(opts.upTo) } } : {}) },
+    where: { clientId, ...(opts.upTo ? { date: { lte: toDbDate(opts.upTo) } } : {}), ...(opts.kinds ? { kind: { in: opts.kinds } } : {}) },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
     take: opts.take,
     include: { createdBy: { select: { name: true } } },

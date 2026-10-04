@@ -4,7 +4,7 @@ import { phaseAt, phaseDays, phasesInMonth, resolvePhases, themeMonths } from '@
 
 const row = (id: string, name: string, start: string, end: string | null = null) => ({ id, name, start, end, note: null })
 
-describe('期（顧客ステップ）', () => {
+describe('フェーズ（指導計画）', () => {
   const phases = resolvePhases([row('b', 'ピラティス期', '2026-06-08'), row('a', '自律神経期', '2026-04-27'), row('c', '筋トレ期', '2026-08-10')])
 
   it('開始日の順に並べ、終わりが空なら次の期の前日まで。最後の期は続いている', () => {
@@ -37,18 +37,17 @@ describe('期（顧客ステップ）', () => {
     expect(phaseDays(phases[2], '2026-09-30')).toBe(52)
   })
 
-  it('色：自律神経期・ピラティス期・筋トレ期は決まった色（3つとも別の色）、ほかの名前は「その他」の灰色', () => {
-    const c = phaseColors(['自律神経期', 'ピラティス期', '筋トレ期', '減量期', '維持期'])
-    expect(c.get('自律神経期')).toBe(PHASE_PRESETS[0].color)
-    expect(c.get('ピラティス期')).toBe(PHASE_PRESETS[1].color)
-    expect(c.get('筋トレ期')).toBe(PHASE_PRESETS[2].color)
-    expect(new Set(PHASE_PRESETS.map((p) => p.color)).size).toBe(3)
-    expect(c.get('減量期')).toBe(PHASE_OTHER_COLOR)
+  it('色：フェーズ1・フェーズ2は決まった色（別の色）、ほかの名前（前の「自律神経期」など）は「その他」の灰色', () => {
+    const c = phaseColors(['フェーズ1', 'フェーズ2', '自律神経期', '維持期'])
+    expect(c.get('フェーズ1')).toBe(PHASE_PRESETS[0].color)
+    expect(c.get('フェーズ2')).toBe(PHASE_PRESETS[1].color)
+    expect(new Set(PHASE_PRESETS.map((p) => p.color)).size).toBe(2)
+    expect(c.get('自律神経期')).toBe(PHASE_OTHER_COLOR)
     expect(c.get('維持期')).toBe(PHASE_OTHER_COLOR)
   })
 
-  it('期の色は、体重（金）・体脂肪率（青）のグラフの線の色と重ならない', () => {
-    const colors = [...phaseColors(['自律神経期', 'ピラティス期', '筋トレ期', 'A']).values()]
+  it('フェーズの色は、体重（金）・体脂肪率（青）のグラフの線の色と重ならない', () => {
+    const colors = [...phaseColors(['フェーズ1', 'フェーズ2', 'A']).values()]
     expect(colors).not.toContain('#c98500')
     expect(colors).not.toContain('#2a78d6')
   })

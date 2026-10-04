@@ -1,8 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
-import { Trash2 } from 'lucide-react'
-import { Field, inputClass, numInputClass, buttonClass } from '@/components/ui'
+import { inputClass, numInputClass } from '@/components/ui'
 import { FormMessage, SubmitButton, type ActionState } from '@/components/SubmitButton'
 import { mdw, todayYmd } from '@/lib/dates'
 import { signed } from '@/lib/format'
@@ -66,73 +65,3 @@ export function BodyWeekForm({ action, days, prevWeight }: { action: (p: ActionS
     </form>
   )
 }
-
-type PaceOpt = { key: string; name: string; percentPerMonth: number; note: string }
-type ActOpt = { value: number; label: string }
-
-export function GoalForm({
-  action,
-  paces,
-  activityFactors,
-  defaults,
-}: {
-  action: (p: ActionState, fd: FormData) => Promise<ActionState>
-  paces: PaceOpt[]
-  activityFactors: ActOpt[]
-  defaults: { startDate: string; targetWeightKg: number | null; paceKey: string | null; activityFactor: number | null }
-}) {
-  const [state, formAction] = useActionState(action, null)
-  return (
-    <form action={formAction} className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Field label="開始日" hint="この日から新しい目標で計算します">
-          <input type="date" name="startDate" required defaultValue={defaults.startDate} className={inputClass} />
-        </Field>
-        <Field label="目標体重（kg）">
-          <input name="targetWeightKg" required inputMode="decimal" defaultValue={defaults.targetWeightKg ?? ''} className={numInputClass} />
-        </Field>
-        <Field label="減量ペース" hint="定義は「設定」で変更できます">
-          <select name="paceKey" defaultValue={defaults.paceKey ?? paces[0]?.key} className={inputClass}>
-            {paces.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.name}（現体重の−{p.percentPerMonth}%／月{p.note ? `・${p.note}` : ''}）
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="活動係数">
-          <select name="activityFactor" defaultValue={String(defaults.activityFactor ?? activityFactors[0]?.value)} className={inputClass}>
-            {activityFactors.map((a) => (
-              <option key={a.value} value={a.value}>
-                {a.value}（{a.label}）
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      <Field label="メモ">
-        <input name="note" maxLength={200} className={inputClass} placeholder="例：結婚式に向けてペースを上げる" />
-      </Field>
-      <div className="flex flex-wrap items-center gap-3">
-        <SubmitButton pendingText="保存しています">この目標で保存</SubmitButton>
-        <FormMessage state={state} />
-      </div>
-    </form>
-  )
-}
-
-export function DeleteGoalButton({ action }: { action: () => Promise<void> }) {
-  return (
-    <form
-      action={action}
-      onSubmit={(e) => {
-        if (!confirm('この目標の履歴を削除しますか？')) e.preventDefault()
-      }}
-    >
-      <button type="submit" className={buttonClass.danger} aria-label="この目標を削除">
-        <Trash2 className="size-4" aria-hidden />
-      </button>
-    </form>
-  )
-}
-

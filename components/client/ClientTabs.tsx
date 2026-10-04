@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils'
 
 const TABS = [
   { href: '', label: '概要' },
-  { href: '/body', label: '体重・目標' },
-  { href: '/steps', label: 'ステップ' },
+  { href: '/plan', label: '指導計画' },
+  { href: '/body', label: '体重' },
   { href: '/training', label: 'トレーニング' },
   { href: '/talk', label: '会話メモ' },
   { href: '/meals', label: '食事メモ' },

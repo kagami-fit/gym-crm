@@ -546,9 +546,9 @@ async function seedDemoAlerts(trainerId: string | null) {
 }
 
 /**
- * デモで顧客ステップ・宿題を見られるようにする（SEED_DEMO=1 のとき1回だけ。AppSetting "demo:steps" に印を残す）
+ * デモで月ごとのテーマ・宿題・自律神経の測定を見られるようにする（SEED_DEMO=1 のとき1回だけ。AppSetting "demo:steps" に印を残す）
  * 日付は各お客様の入会日・来店日から決める（デモ顧客を作った日と、この関数を実行した日がずれても合うように）
- * - 期：太郎さん 自律神経期→ピラティス期→筋トレ期、花子さん 自律神経期→ピラティス期、美咲さん 休会前まで
+ * - フェーズは seedDemoPlan で作る
  * - 月ごとのテーマ（来月の分は空けておく）
  * - 宿題：確認待ちと、これまでの結果
  * - 自律神経の測定結果（見本の PDF）を来店日に
@@ -557,29 +557,16 @@ async function seedDemoSteps(trainerId: string | null) {
   if (process.env.SEED_DEMO !== '1') return
   if (await prisma.appSetting.findUnique({ where: { key: 'demo:steps' } })) return
   const find = (name: string) => prisma.client.findFirst({ where: { name }, select: { id: true, joinedOn: true } })
-  const [taro, hanako, misaki] = await Promise.all([find('デモ 太郎'), find('デモ 花子'), find('デモ 美咲')])
+  const [taro, hanako] = await Promise.all([find('デモ 太郎'), find('デモ 花子')])
   if (!taro?.joinedOn || !hanako?.joinedOn) return console.log('steps: デモ顧客がいないため投入しない')
   const visits = async (clientId: string) =>
     (await prisma.trainingSession.findMany({ where: { clientId }, orderBy: { date: 'asc' }, select: { date: true } })).map((x) => fromDbDate(x.date))
   /** その日以降で最初の来店日（なければその日） */
   const visitFrom = (list: Ymd[], day: Ymd) => list.find((d) => d >= day) ?? day
 
-  // ── 期
-  const phase = (clientId: string, name: string, start: Ymd, end: Ymd | null = null, note?: string) =>
-    prisma.clientPhase.create({ data: { clientId, name, startDate: toDbDate(start), endDate: end ? toDbDate(end) : null, note: note ?? null, createdById: trainerId } })
   const tj = fromDbDate(taro.joinedOn)
   const hj = fromDbDate(hanako.joinedOn)
-  await phase(taro.id, '自律神経期', tj, null, '睡眠5〜6時間・デスクワークで肩が上がりやすい。まず呼吸と睡眠から')
-  await phase(taro.id, 'ピラティス期', addDays(tj, 42), null, '睡眠が6.5時間まで伸びたので移行')
-  await phase(taro.id, '筋トレ期', addDays(tj, 105), null, TARO_STRENGTH_NOTE)
-  await phase(hanako.id, '自律神経期', hj, null, '夜勤で睡眠が乱れやすいので長めに')
-  await phase(hanako.id, 'ピラティス期', addDays(hj, 49))
-  if (misaki?.joinedOn) {
-    const mj = fromDbDate(misaki.joinedOn)
-    const mv = await visits(misaki.id)
-    await phase(misaki.id, '自律神経期', mj)
-    await phase(misaki.id, 'ピラティス期', addDays(mj, 28), mv[mv.length - 1] ?? addDays(mj, 110), '休会のため、いったん終了')
-  }
+  // フェーズは seedDemoPlan で作る（2026-10-04 に「自律神経期・ピラティス期・筋トレ期」から「フェーズ1・フェーズ2」に整理）
 
   // ── 月ごとのテーマ（入会月から今月まで。古い月から順に）
   const themes = async (clientId: string, joined: Ymd, rows: Array<[string, string]>) => {
@@ -647,7 +634,7 @@ async function seedDemoSteps(trainerId: string | null) {
   if (hv.length) await ans(hanako.id, hv[hv.length - 1], 2, 'ピラティス期に入ってからの再測定')
 
   await prisma.appSetting.create({ data: { key: 'demo:steps', value: { at: todayYmd() } } })
-  console.log('steps: デモの期・テーマ・宿題・自律神経の測定結果を用意')
+  console.log('steps: デモのテーマ・宿題・自律神経の測定結果を用意')
 }
 
 const TARO_STRENGTH_NOTE = 'ピラティスで姿勢と体幹が安定してきたので、筋トレを増やす'
@@ -694,6 +681,270 @@ async function seedDemoPurposes() {
   console.log(`purposes: 種目マスタ ${master}件・記録 ${records}件に目的を入れた（期の名前の変更 ${renamed.count}件）`)
 }
 
+/**
+ * デモで指導計画を見られるようにする（SEED_DEMO=1 のとき1回だけ。AppSetting "demo:plan" に印を残す。2026-10-04 の整理）
+ * 日付は各お客様の入会日・来店日から決める。「今日」から決めるもの（見直し予定日など）は、この関数を実行した日が基準。
+ * - フェーズ：前のデモの「自律神経期・ピラティス期・筋トレ期」を消して、フェーズ1・フェーズ2で作り直す（理由・来店頻度・見直し予定日つき）
+ *   太郎さん フェーズ1→フェーズ2（減量）／花子さん フェーズ1（回復食→バランス食）／美咲さん 休会前までフェーズ1
+ * - 食事方針：前の目標に方針を入れ、方針を変えた日を足す
+ * - 自律神経の測定に、活性度の数値・位置・型（仮）を入れる（太郎さんは途中の測定も足す）
+ * - 動作の評価・体調チェック・体重の評価
+ * - 太郎さん：直近の体重を横ばいにして「体重の停滞」（減量中）の見本に
+ * - 由美さん（新しいデモ顧客）：コーフラックスの終了予定日を過ぎている見本
+ */
+async function seedDemoPlan(trainerId: string | null) {
+  if (process.env.SEED_DEMO !== '1') return
+  if (await prisma.appSetting.findUnique({ where: { key: 'demo:plan' } })) return
+  const today = todayYmd()
+  const find = (name: string) => prisma.client.findFirst({ where: { name }, select: { id: true, joinedOn: true } })
+  const [taro, hanako, misaki] = await Promise.all([find('デモ 太郎'), find('デモ 花子'), find('デモ 美咲')])
+  if (!taro?.joinedOn || !hanako?.joinedOn) return console.log('plan: デモ顧客がいないため投入しない')
+  const visits = async (clientId: string) =>
+    (await prisma.trainingSession.findMany({ where: { clientId }, orderBy: { date: 'asc' }, select: { date: true } })).map((x) => fromDbDate(x.date))
+  /** その日以降で最初の来店日（なければその日。今日より後にはしない） */
+  const visitFrom = (list: Ymd[], day: Ymd) => {
+    const d = list.find((x) => x >= day) ?? day
+    return d > today ? today : d
+  }
+  const weightOn = async (clientId: string, day: Ymd) =>
+    (await prisma.bodyLog.findFirst({ where: { clientId, date: { lte: toDbDate(day) }, weightKg: { not: null } }, orderBy: { date: 'desc' } }))?.weightKg ?? null
+  const pdf = (n: number) => readFileSync(new URL(`./seed-data/ans-sample-${n}.pdf`, import.meta.url))
+  const by = trainerId
+
+  type PhaseDemo = { name: string; start: Ymd; end?: Ymd | null; review?: Ymd | null; freq?: string; note: string }
+  const phases = async (clientId: string, rows: PhaseDemo[]) => {
+    await prisma.clientPhase.deleteMany({ where: { clientId } })
+    for (const r of rows)
+      await prisma.clientPhase.create({
+        data: { clientId, name: r.name, startDate: toDbDate(r.start), endDate: r.end ? toDbDate(r.end) : null, reviewDate: r.review ? toDbDate(r.review) : null, visitFrequency: r.freq ?? null, note: r.note, createdById: by },
+      })
+  }
+  type PolicyDemo = { policy: string; start: Ymd; target?: number | null; pace?: string | null; activity?: number | null; targetDate?: Ymd | null; endDate?: Ymd | null; review?: Ymd | null; note: string }
+  const addPolicy = async (clientId: string, r: PolicyDemo) =>
+    prisma.goal.create({
+      data: {
+        clientId,
+        startDate: toDbDate(r.start),
+        policy: r.policy,
+        startWeightKg: await weightOn(clientId, r.start),
+        targetWeightKg: r.target ?? null,
+        paceKey: r.pace ?? null,
+        activityFactor: r.activity ?? null,
+        targetDate: r.targetDate ? toDbDate(r.targetDate) : null,
+        endDate: r.endDate ? toDbDate(r.endDate) : null,
+        reviewDate: r.review ? toDbDate(r.review) : null,
+        note: r.note,
+        createdById: by,
+      },
+    })
+  type Ans = { s: number; sl: string; p: number; pl: string; type?: string | null; note: string }
+  const ansData = (a: Ans) => ({ sympathetic: a.s, sympatheticLevel: a.sl, parasympathetic: a.p, parasympatheticLevel: a.pl, ansType: a.type ?? null, note: a.note })
+  const addAns = async (clientId: string, day: Ymd, n: number, a: Ans) => {
+    const data = pdf(n)
+    await prisma.ansMeasurement.create({ data: { clientId, measuredOn: toDbDate(day), fileName: `自律神経測定_${day}.pdf`, mimeType: 'application/pdf', size: data.length, data, createdById: by, ...ansData(a) } })
+  }
+  const move = (clientId: string, date: Ymd, movement: string, status: string, checks?: Record<string, string>, note?: string) =>
+    prisma.movementCheck.create({ data: { clientId, date: toDbDate(date), movement, status, checks: checks ?? undefined, note: note ?? null, createdById: by } })
+  const cond = (clientId: string, date: Ymd, items: Record<string, string>, painArea?: string, note?: string) =>
+    prisma.conditionCheck.upsert({
+      where: { clientId_date: { clientId, date: toDbDate(date) } },
+      update: { items, painArea: painArea ?? null, note: note ?? null },
+      create: { clientId, date: toDbDate(date), items, painArea: painArea ?? null, note: note ?? null, createdById: by },
+    })
+
+  // ── 太郎さん：フェーズ1（回復食→バランス食）→ フェーズ2（減量）
+  const tj = fromDbDate(taro.joinedOn)
+  const tv = await visits(taro.id)
+  const t2 = addDays(tj, 105)
+  await phases(taro.id, [
+    { name: 'フェーズ1', start: tj, freq: '週2回', note: '睡眠5〜6時間・デスクワークで肩が上がりやすい。交感神経が高く、副交感神経が低い。まず体を整える' },
+    { name: 'フェーズ2', start: t2, freq: '週2回', review: addDays(today, 21), note: '自律神経が2回続けて両方基準内。屈曲・伸展ができるようになり、肩の痛みもないので筋トレ中心へ' },
+  ])
+  const tGoals = await prisma.goal.findMany({ where: { clientId: taro.id }, orderBy: { startDate: 'asc' } })
+  const tTargetDate = addDays(tj, 180)
+  if (tGoals[0])
+    await prisma.goal.update({ where: { id: tGoals[0].id }, data: { policy: 'recovery', paceKey: null, reviewDate: toDbDate(addDays(tj, 21)), targetDate: toDbDate(tTargetDate), note: '夜遅い食事と飲み会で胃腸が疲れている。まず消化にやさしい食事から' } })
+  for (const g of tGoals.slice(1)) await prisma.goal.update({ where: { id: g.id }, data: { policy: 'loss', targetDate: toDbDate(tTargetDate) } })
+  await addPolicy(taro.id, { policy: 'balance', start: addDays(tj, 28), target: 68, activity: 1.2, targetDate: tTargetDate, note: '胃腸の調子が戻ったので、バランス食へ' })
+  await addPolicy(taro.id, { policy: 'loss', start: t2, target: 68, pace: 'normal', activity: 1.2, targetDate: tTargetDate, note: 'フェーズ2へ。半年後の健康診断に向けて68kgまで減量（ペースは普通）' })
+
+  // 自律神経：初回（交感神経が高い・副交感神経が低い）→ 途中 → フェーズ2の前に2回続けて両方基準内 → 最近
+  const tAns = await prisma.ansMeasurement.findMany({ where: { clientId: taro.id }, orderBy: { measuredOn: 'asc' } })
+  if (tAns[0]) await prisma.ansMeasurement.update({ where: { id: tAns[0].id }, data: ansData({ s: 8.1, sl: 'high', p: 4.3, pl: 'low', type: 'A', note: '初回。交感神経が高く、副交感神経が低い。寝つきが悪く、肩が上がりやすい' }) })
+  if (tAns.length > 1) await prisma.ansMeasurement.update({ where: { id: tAns[tAns.length - 1].id }, data: ansData({ s: 6.9, sl: 'normal', p: 6.2, pl: 'normal', note: '両方基準内。良い状態を保てている' }) })
+  await addAns(taro.id, visitFrom(tv, addDays(tj, 70)), 2, { s: 7.6, sl: 'normal', p: 4.9, pl: 'low', type: 'B', note: '交感神経は基準内に。副交感神経はまだ低い' })
+  await addAns(taro.id, visitFrom(tv, addDays(tj, 98)), 1, { s: 7.0, sl: 'normal', p: 5.7, pl: 'normal', note: '両方基準内。睡眠が6.5時間まで伸びた' })
+
+  // 動作：6つとも達成してフェーズ2へ（前の段階に戻った記録も1つ）
+  const tAt = (d: number) => visitFrom(tv, addDays(tj, d))
+  await move(taro.id, tAt(7), 'imprint', 'practicing')
+  await move(taro.id, tAt(21), 'imprint', 'achieved')
+  await move(taro.id, tAt(14), 'flexion', 'practicing', { heel: 'つかない' })
+  await move(taro.id, tAt(49), 'flexion', 'practicing', { heel: 'つかない' }, 'パイクアップは上がるようになった')
+  await move(taro.id, tAt(70), 'flexion', 'achieved', { heel: 'つく' })
+  await move(taro.id, tAt(28), 'extension', 'practicing', { backPain: 'なし', returning: 'むずかしい' })
+  await move(taro.id, tAt(56), 'extension', 'achieved', { backPain: 'なし', returning: 'できる' })
+  await move(taro.id, tAt(63), 'extension', 'practicing', { backPain: 'なし', returning: 'むずかしい' }, '飲み会続きで戻る動きが崩れた。一つ前に戻して確認')
+  await move(taro.id, tAt(77), 'extension', 'achieved', { backPain: 'なし', returning: 'できる' })
+  await move(taro.id, tAt(63), 'antiGravity', 'practicing', { pain: 'なし', motion: '1段階目まで' })
+  await move(taro.id, tAt(91), 'antiGravity', 'achieved', { pain: 'なし', motion: '2段階目まで楽に上がる' })
+  await move(taro.id, tAt(84), 'lateral', 'practicing', { left: 'achieved', right: 'practicing' })
+  await move(taro.id, tAt(98), 'lateral', 'achieved', { left: 'achieved', right: 'achieved' })
+  await move(taro.id, tAt(84), 'rotation', 'practicing', { sideDiff: '大きい', ease: '右を向きにくい' })
+  await move(taro.id, tAt(98), 'rotation', 'achieved', { sideDiff: '小さい', ease: '右も向きやすくなった' })
+
+  // 体調：初回の訴え → よくなっていく
+  await cond(taro.id, visitFrom(tv, tj), { fatigue: 'strong', pain: 'mild', malaise: 'none', postMeal: 'strong', sleep: 'strong' }, '肩・首', '夕方に疲れが出る。昼食後に眠くなる。寝つきが悪い')
+  await cond(taro.id, tAt(49), { fatigue: 'mild', pain: 'mild', malaise: 'none', postMeal: 'mild', sleep: 'mild' }, '肩')
+  await cond(taro.id, tAt(98), { fatigue: 'none', pain: 'none', malaise: 'none', postMeal: 'none', sleep: 'mild' })
+  if (tv.length) await cond(taro.id, tv[tv.length - 1], { fatigue: 'none', pain: 'none', malaise: 'none', postMeal: 'none', sleep: 'none' }, undefined, '旅行の準備で忙しいが、疲れは残っていない')
+
+  // 体重：直近18日を横ばいに（減量中の「体重の停滞」の見本）
+  const tLogs = await prisma.bodyLog.findMany({ where: { clientId: taro.id, weightKg: { not: null }, date: { gte: toDbDate(addDays(today, -90)) } }, orderBy: { date: 'asc' } })
+  const cut = addDays(today, -18)
+  const tBefore = tLogs.filter((l) => fromDbDate(l.date) < cut).map((l) => l.weightKg!)
+  if (tBefore.length) {
+    const floor = Math.min(...tBefore)
+    const rand = rng(91)
+    const flat = () => Math.round((floor + 0.2 + rand() * 0.4) * 10) / 10
+    for (const l of tLogs.filter((x) => fromDbDate(x.date) >= cut)) await prisma.bodyLog.update({ where: { id: l.id }, data: { weightKg: flat() } })
+    for (const d of [-7, 0]) {
+      const date = toDbDate(addDays(today, d))
+      await prisma.bodyLog.upsert({ where: { clientId_date: { clientId: taro.id, date } }, update: { weightKg: flat() }, create: { clientId: taro.id, date, weightKg: flat() } })
+    }
+  }
+  await prisma.weightReview.create({ data: { clientId: taro.id, date: toDbDate(addDays(today, -30)), verdict: 'expected', reason: '週0.5%前後で減っている。想定内', createdById: by } })
+  await prisma.weightReview.create({ data: { clientId: taro.id, date: toDbDate(addDays(today, -1)), verdict: 'review', reason: '旅行前で外食が増え、2週間ほど最低体重を更新していない。食事の記録を見直す', createdById: by } })
+
+  // ── 花子さん：フェーズ1（回復食 → バランス食）。移行チェックの見本（副交感神経がまだ低い・屈曲は練習中）
+  const hj = fromDbDate(hanako.joinedOn)
+  const hv = await visits(hanako.id)
+  const hAt = (d: number) => visitFrom(hv, addDays(hj, d))
+  await phases(hanako.id, [{ name: 'フェーズ1', start: hj, freq: '週1回', review: addDays(today, 14), note: '夜勤で睡眠が乱れやすい。交感神経・副交感神経がどちらも低く、疲れが強い' }])
+  const hGoals = await prisma.goal.findMany({ where: { clientId: hanako.id }, orderBy: { startDate: 'asc' } })
+  if (hGoals[0]) await prisma.goal.update({ where: { id: hGoals[0].id }, data: { policy: 'recovery', paceKey: null, reviewDate: toDbDate(addDays(hj, 28)), note: '夜勤明けで疲れが強く、食事が不規則。まず回復食から' } })
+  await addPolicy(hanako.id, { policy: 'balance', start: hAt(35), target: 56, activity: 1.5, review: addDays(today, 10), note: '胃腸の調子が整ってきたので、バランス食へ' })
+  const hAns = await prisma.ansMeasurement.findMany({ where: { clientId: hanako.id }, orderBy: { measuredOn: 'asc' } })
+  if (hAns[0]) await prisma.ansMeasurement.update({ where: { id: hAns[0].id }, data: ansData({ s: 4.4, sl: 'low', p: 4.1, pl: 'low', type: 'C', note: '初回。夜勤明けで疲労感が強い。どちらも低い' }) })
+  if (hAns.length > 1) await prisma.ansMeasurement.update({ where: { id: hAns[hAns.length - 1].id }, data: ansData({ s: 7.68, sl: 'normal', p: 4.96, pl: 'low', type: 'B', note: '交感神経は基準内に。副交感神経はまだ低い。夜勤明けの疲れは減ってきた' }) })
+  await move(hanako.id, hAt(7), 'imprint', 'practicing')
+  await move(hanako.id, hAt(28), 'imprint', 'achieved')
+  await move(hanako.id, hAt(21), 'flexion', 'practicing', { heel: 'つかない' })
+  if (hv.length) await move(hanako.id, hv[hv.length - 1], 'flexion', 'practicing', { heel: 'つかない' }, 'パイクアップは補助ありで上がる')
+  await move(hanako.id, hAt(42), 'extension', 'practicing', { backPain: 'なし', returning: 'むずかしい' })
+  await cond(hanako.id, visitFrom(hv, hj), { fatigue: 'strong', pain: 'mild', malaise: 'mild', postMeal: 'strong', sleep: 'strong' }, '首・肩', '夜勤明けは一日中だるい。冷えもある')
+  await cond(hanako.id, hAt(42), { fatigue: 'mild', pain: 'mild', malaise: 'mild', postMeal: 'mild', sleep: 'strong' }, '首')
+  if (hv.length) await cond(hanako.id, hv[hv.length - 1], { fatigue: 'mild', pain: 'none', malaise: 'none', postMeal: 'none', sleep: 'mild' }, undefined, '夜勤明けの疲れが前より軽い')
+  await prisma.weightReview.create({ data: { clientId: hanako.id, date: toDbDate(addDays(today, -2)), verdict: 'hold', reason: 'フェーズ1で体を整えている段階。体重より体調と体脂肪率を見る', createdById: by } })
+
+  // ── 美咲さん：休会前までフェーズ1
+  if (misaki?.joinedOn) {
+    const mj = fromDbDate(misaki.joinedOn)
+    const mv = await visits(misaki.id)
+    await phases(misaki.id, [{ name: 'フェーズ1', start: mj, end: mv[mv.length - 1] ?? addDays(mj, 110), freq: '週1回', note: '在宅勤務で活動量が少ない。まず生活リズムから（休会のため、いったん終了）' }])
+    await prisma.goal.updateMany({ where: { clientId: misaki.id }, data: { policy: 'balance', paceKey: null } })
+  }
+
+  // ── 由美さん（新しいデモ顧客）：フェーズ1 → フェーズ2（コーフラックス）。終了予定日を5日過ぎている
+  if (!(await prisma.client.findFirst({ where: { name: 'デモ 由美' } }))) {
+    await createDemoClient({
+      seed: 55,
+      today,
+      trainerId,
+      client: {
+        memberNo: 'D0005',
+        name: 'デモ 由美',
+        kana: 'でも ゆみ',
+        gender: 'female',
+        birthDate: toDbDate('1990-11-03'),
+        heightCm: 158.0,
+        status: 'active',
+        joinedOn: toDbDate(addDays(today, -120)),
+        referral: 'Instagram',
+        purposes: ['ボディメイク', '健康維持'],
+        note: '1,200kcal前後の食事で体重が止まっていた。食べる量を増やすことに不安がある',
+      },
+      body: { fromDay: -120, toDay: 0, ratio: 0.75, w0: 52.6, w1: 52.2, f0: 29.6, f1: 27.9 },
+      goals: [{ day: -120, target: 50, pace: 'gentle', activity: 1.5, note: '初回カウンセリング' }],
+      sessions: {
+        fromDay: -118,
+        toDay: -1,
+        weekdays: [3, 6],
+        plans: [
+          [
+            { part: '脚', name: 'ヒップリフト', from: 0, to: 0, step: 1, reps: 15, sets: 3 },
+            { part: '脚', name: 'ゴブレットスクワット', from: 4, to: 10, step: 1, reps: 12, sets: 3 },
+            { part: '背中', name: 'ラットプルダウン（パラレルグリップ）', from: 12.5, to: 22.5, step: 2.5, reps: 12, sets: 3 },
+          ],
+        ],
+      },
+      meals: { days: 7 },
+      questionnaire: {
+        purposes: ['ボディメイク', '健康維持・体力向上'],
+        goalDetail: '食べる量を増やしても太らない体にしたい。疲れにくくなりたい',
+        underTreatment: 'なし',
+        surgery: 'なし',
+        exerciseHabit: '月に数回',
+        stress: 'ふつう',
+      },
+    })
+    const yumi = await prisma.client.findFirst({ where: { name: 'デモ 由美' }, select: { id: true } })
+    if (yumi) {
+      const yv = await visits(yumi.id)
+      const yAt = (d: number) => visitFrom(yv, addDays(today, d))
+      const y2 = addDays(today, -63)
+      await phases(yumi.id, [
+        { name: 'フェーズ1', start: addDays(today, -120), freq: '週2回', note: '1,200kcalで体重が止まり、疲れやすい。交感神経・副交感神経がどちらも低い' },
+        { name: 'フェーズ2', start: y2, freq: '週2回', note: '自律神経が両方基準内に。屈曲・伸展ができるようになったので、筋トレとコーフラックスへ' },
+      ])
+      const yGoal = await prisma.goal.findFirst({ where: { clientId: yumi.id }, orderBy: { startDate: 'asc' } })
+      const yTarget = addDays(today, 240)
+      if (yGoal) await prisma.goal.update({ where: { id: yGoal.id }, data: { policy: 'recovery', paceKey: null, reviewDate: toDbDate(addDays(today, -92)), targetDate: toDbDate(yTarget), note: '食事量が少なく、胃腸も弱い。まず回復食から' } })
+      await addPolicy(yumi.id, { policy: 'balance', start: addDays(today, -91), target: 50, activity: 1.5, targetDate: yTarget, note: '3食とれるようになったので、バランス食へ' })
+      await addPolicy(yumi.id, {
+        policy: 'reverse',
+        start: y2,
+        target: 50,
+        activity: 1.5,
+        targetDate: yTarget,
+        endDate: addDays(today, -5),
+        note: '1,200kcalで体重が止まっていたので、体重を増やさずに1,700kcalまで上げてから減量へ',
+      })
+      await addAns(yumi.id, yAt(-118), 1, { s: 4.2, sl: 'low', p: 4.0, pl: 'low', type: 'C', note: '初回。どちらも低い。疲れやすく、手足が冷える' })
+      await addAns(yumi.id, yAt(-66), 2, { s: 6.6, sl: 'normal', p: 5.9, pl: 'normal', note: '両方基準内' })
+      for (const [d, mv, st, checks] of [
+        [-110, 'imprint', 'achieved', undefined],
+        [-100, 'flexion', 'practicing', { heel: 'つかない' }],
+        [-75, 'flexion', 'achieved', { heel: 'つく' }],
+        [-90, 'extension', 'achieved', { backPain: 'なし', returning: 'できる' }],
+        [-80, 'antiGravity', 'achieved', { pain: 'なし' }],
+        [-70, 'lateral', 'achieved', { left: 'achieved', right: 'achieved' }],
+        [-70, 'rotation', 'achieved', { sideDiff: 'なし' }],
+      ] as Array<[number, string, string, Record<string, string> | undefined]>)
+        await move(yumi.id, yAt(d), mv, st, checks)
+      await cond(yumi.id, yAt(-118), { fatigue: 'strong', pain: 'none', malaise: 'mild', postMeal: 'mild', sleep: 'mild' }, undefined, '疲れやすい。手足が冷える')
+      await cond(yumi.id, yAt(-66), { fatigue: 'mild', pain: 'none', malaise: 'none', postMeal: 'none', sleep: 'none' })
+      await cond(yumi.id, yAt(-4), { fatigue: 'none', pain: 'none', malaise: 'none', postMeal: 'none', sleep: 'none' }, undefined, '食べる量が増えても体が軽い')
+      // 週ごとの食事の数字：コーフラックスで設定カロリーを少しずつ上げる（体重は横ばい）
+      for (let i = 1; i <= 9; i++) {
+        const weekStart = toDbDate(addDays(weekStartOf(today), -7 * i))
+        const targetKcal = 1700 - (i - 1) * 50
+        await prisma.nutritionWeek.upsert({
+          where: { clientId_weekStart: { clientId: yumi.id, weekStart } },
+          update: {},
+          create: { clientId: yumi.id, weekStart, targetKcal, avgKcal: targetKcal - 40 + ((i * 37) % 60), proteinG: 85, fatG: 50, carbsG: Math.round((targetKcal - 85 * 4 - 50 * 9) / 4), updatedById: by },
+        })
+      }
+      await prisma.weightReview.create({ data: { clientId: yumi.id, date: toDbDate(addDays(today, -4)), verdict: 'expected', reason: '摂取カロリーを1,650kcalまで上げても体重は横ばい（±0.3kg）。想定内', createdById: by } })
+      await prisma.talkNote.create({ data: { clientId: yumi.id, date: toDbDate(addDays(today, -4)), kind: 'good', text: '「こんなに食べても太らないんですね」と安心していた', createdById: by } })
+      await prisma.talkNote.create({ data: { clientId: yumi.id, date: toDbDate(addDays(today, -60)), kind: 'negative', text: '食べる量を増やすのが怖いと話していた。体重は増やさない計画だと説明した', createdById: by } })
+    }
+  }
+
+  await prisma.appSetting.create({ data: { key: 'demo:plan', value: { at: today } } })
+  console.log('plan: デモの指導計画（フェーズ・食事方針・自律神経・動作・体調・体重の評価）を用意')
+}
+
 async function main() {
   await seedSettings()
   await seedExercises()
@@ -705,6 +956,7 @@ async function main() {
   await seedDemoAlerts(ownerId ?? demoUserId)
   await seedDemoSteps(ownerId ?? demoUserId)
   await seedDemoPurposes()
+  await seedDemoPlan(ownerId ?? demoUserId)
 }
 
 main()

@@ -1,20 +1,23 @@
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { BodyWeekForm, DeleteGoalButton, GoalForm } from '@/components/client/BodyForms'
-import { Badge, EmptyState, Section, buttonClass } from '@/components/ui'
+import { BodyWeekForm } from '@/components/client/BodyForms'
+import { WeightEvaluation } from '@/components/plan/WeightEvaluation'
+import { WeightReviewPanel } from '@/components/plan/WeightReviewPanel'
+import { EmptyState, Section, buttonClass } from '@/components/ui'
 import { resolveBaseDate } from '@/lib/base-date'
-import { findPace, activityLabel } from '@/lib/calc/settings'
 import { getClient } from '@/lib/data/clients'
 import { getBodyLogs } from '@/lib/data/body'
+import { getNutritionWeeks, recentWeeks } from '@/lib/data/nutrition'
 import { getBodyView } from '@/lib/data/overview'
-import { addDays, daysEndingAt, md, mdw, ymdJa } from '@/lib/dates'
+import { getWeightReviews } from '@/lib/data/plan'
+import { addDays, daysEndingAt, md, mdw } from '@/lib/dates'
 import { num } from '@/lib/format'
 import { requireUser } from '@/lib/session'
-import { addGoalAction, deleteGoalAction, saveBodyWeekAction } from './actions'
+import { saveBodyWeekAction } from './actions'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  return { title: `${(await getClient(id)).name}｜体重・目標` }
+  return { title: `${(await getClient(id)).name}｜体重` }
 }
 
 export default async function BodyPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ date?: string }> }) {
@@ -22,11 +25,15 @@ export default async function BodyPage({ params, searchParams }: { params: Promi
   const { id } = await params
   const base = resolveBaseDate((await searchParams).date)
   const days = daysEndingAt(base, 7)
-  const [view, week, history] = await Promise.all([getBodyView(id, base), getBodyLogs(id, days[0], base), getBodyLogs(id, addDays(base, -120), base)])
+  const [view, week, history, reviews, nutrition] = await Promise.all([
+    getBodyView(id, base),
+    getBodyLogs(id, days[0], base),
+    getBodyLogs(id, addDays(base, -120), base),
+    getWeightReviews(id),
+    getNutritionWeeks(id, recentWeeks(base, 12)),
+  ])
   const byDate = new Map(week.map((w) => [w.date, w]))
   const before = [...history].reverse().find((h) => h.date < days[0] && h.weightKg != null)
-  const { settings, goal, goals } = view
-  const pace = goal ? findPace(settings, goal.paceKey) : null
 
   return (
     <div className="space-y-5">
@@ -57,71 +64,25 @@ export default async function BodyPage({ params, searchParams }: { params: Promi
         />
       </Section>
 
-      <Section title="目標設定" en="Goal" id="goal">
-        {goal ? (
-          <div className="mb-5 grid gap-3 rounded-xl border border-line bg-soft p-4 sm:grid-cols-2 lg:grid-cols-5">
-            <Item label="現在の目標（開始日）" value={ymdJa(goal.startDate)} />
-            <Item label="目標体重" value={`${num(goal.targetWeightKg)} kg`} />
-            <Item label="減量ペース" value={pace ? `${pace.name}（−${pace.percentPerMonth}%／月）` : '設定から削除されたペース'} warn={!pace} />
-            <Item label="活動係数" value={`${num(goal.activityFactor)}`} sub={activityLabel(settings, goal.activityFactor)} />
-            <Item label="開始時" value={goal.startWeightKg != null ? `${num(goal.startWeightKg)} kg` : '—'} sub={goal.startBodyFatPct != null ? `体脂肪率 ${num(goal.startBodyFatPct)}%` : undefined} />
+      <Section
+        title="体重の評価"
+        en="Review"
+        id="review"
+        className="scroll-mt-[calc(var(--client-tabs-h)+12px)]"
+        aside={
+          <Link href={`/clients/${id}/plan?date=${base}#policy`} className="rounded-full bg-brand px-3 py-1 text-xs font-black text-ink hover:bg-brand-deep">
+            食事方針・目標を変える（指導計画）
+          </Link>
+        }
+      >
+        <div className="space-y-5">
+          <WeightEvaluation view={view} reviews={reviews} nutrition={Object.values(nutrition)} clientId={id} showProgress />
+          <div>
+            <h3 className="mb-2 text-sm font-black">担当者の評価を記録する</h3>
+            <p className="mb-3 text-sm text-ink-2">体重の変化が、いまの方針から見て想定内か・見直しが必要か・まだ評価しないかを、理由と一緒に残します。数字だけで自動では判定しません。</p>
+            <WeightReviewPanel key={base} clientId={id} base={base} rows={reviews} />
           </div>
-        ) : (
-          <div className="mb-5">
-            <EmptyState title="まだ目標がありません。下のフォームで設定してください" />
-          </div>
-        )}
-        <h3 className="mb-3 text-sm font-black">{goal ? '目標を変更する（履歴に追加されます）' : '目標を設定する'}</h3>
-        <GoalForm
-          key={base}
-          action={addGoalAction.bind(null, id)}
-          paces={settings.paces}
-          activityFactors={settings.activityFactors}
-          defaults={{ startDate: base, targetWeightKg: goal?.targetWeightKg ?? null, paceKey: goal?.paceKey ?? null, activityFactor: goal?.activityFactor ?? null }}
-        />
-
-        {goals.length > 0 && (
-          <div className="mt-6">
-            <h3 className="mb-2 text-sm font-black">目標の履歴</h3>
-            <div className="overflow-x-auto rounded-xl border border-line">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead className="bg-tint text-left text-xs text-ink-2">
-                  <tr>
-                    <th className="px-3 py-2 font-bold">開始日</th>
-                    <th className="px-3 py-2 text-right font-bold">開始時</th>
-                    <th className="px-3 py-2 text-right font-bold">目標体重</th>
-                    <th className="px-3 py-2 font-bold">ペース</th>
-                    <th className="px-3 py-2 text-right font-bold">活動係数</th>
-                    <th className="px-3 py-2 font-bold">メモ</th>
-                    <th className="w-10 px-2 py-2" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {goals.map((g) => (
-                    <tr key={g.id}>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        <span className="num">{ymdJa(g.startDate, false)}</span>
-                        {g.id === goal?.id && (
-                          <Badge tone="brand" className="ml-2">
-                            基準日に有効
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="num tnum px-3 py-2 text-right">{g.startWeightKg != null ? `${num(g.startWeightKg)}kg` : '—'}</td>
-                      <td className="num tnum px-3 py-2 text-right font-semibold">{num(g.targetWeightKg)}kg</td>
-                      <td className="px-3 py-2">{findPace(settings, g.paceKey)?.name ?? '—'}</td>
-                      <td className="num tnum px-3 py-2 text-right">{num(g.activityFactor)}</td>
-                      <td className="px-3 py-2 text-ink-2">{g.note ?? ''}</td>
-                      <td className="px-2 py-1">
-                        <DeleteGoalButton action={deleteGoalAction.bind(null, id, g.id)} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        </div>
       </Section>
 
       <Section title="記録の一覧（直近4ヶ月）" en="History">
@@ -158,16 +119,6 @@ export default async function BodyPage({ params, searchParams }: { params: Promi
           </div>
         )}
       </Section>
-    </div>
-  )
-}
-
-function Item({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {
-  return (
-    <div>
-      <p className="text-xs font-bold text-ink-3">{label}</p>
-      <p className={`num mt-0.5 font-semibold ${warn ? 'text-danger' : 'text-ink'}`}>{value}</p>
-      {sub && <p className="text-xs text-ink-3">{sub}</p>}
     </div>
   )
 }

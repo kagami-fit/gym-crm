@@ -23,7 +23,10 @@ function DataRow({ label, value, unit, sub, subTone, emphasis }: { label: string
 export function BasicData({ view, clientId }: { view: BodyView; clientId: string | null }) {
   const { plan: p, weight, bodyFat, goal, pace, settings } = view
   const comp = p.composition
-  const toTarget = weight && goal ? weight.value - goal.targetWeightKg : null
+  const toTarget = weight && goal?.targetWeightKg != null ? weight.value - goal.targetWeightKg : null
+  const loss = goal?.policy === 'loss'
+  // 活動係数は食事方針ごとに入れる（減量以外では任意）。基礎代謝に足りない項目とは分けて知らせる
+  const bmrMissing = p.missing.filter((m) => m !== '活動係数')
   const bodyHref = clientId ? `/clients/${clientId}/body?date=${view.base}` : null
 
   return (
@@ -40,10 +43,10 @@ export function BasicData({ view, clientId }: { view: BodyView; clientId: string
       )}
       {weight && !goal && (
         <Notice tone="info">
-          目標が未設定のため、目標カロリーと予測は表示されません。
-          {bodyHref && (
-            <Link href={bodyHref} className="ml-1 font-bold underline">
-              目標を設定する
+          食事方針が未設定のため、目標カロリーと予測は表示されません。
+          {clientId && (
+            <Link href={`/clients/${clientId}/plan?date=${view.base}#policy`} className="ml-1 font-bold underline">
+              食事方針を決める
             </Link>
           )}
         </Notice>
@@ -53,11 +56,12 @@ export function BasicData({ view, clientId }: { view: BodyView; clientId: string
           最新の体重は {ymdJa(weight.date)} の記録です（基準日の{diffDays(weight.date, view.base)}日前）。計算はこの体重で行っています。
         </Notice>
       )}
-      {p.missing.length > 0 && weight && goal && (
+      {bmrMissing.length > 0 && weight && goal && (
         <Notice tone="warn">
-          基礎代謝の計算に {p.missing.join('・')} が必要です（計算式：{BMR_METHODS[settings.bmrMethod].label}）
+          基礎代謝の計算に {bmrMissing.join('・')} が必要です（計算式：{BMR_METHODS[settings.bmrMethod].label}）
         </Notice>
       )}
+      {weight && goal && goal.activityFactor == null && <Notice tone="info">消費カロリー・目標カロリーは、食事方針に活動係数を入れると出ます。</Notice>}
       {p.warnings.map((w) => (
         <Notice key={w} tone="danger">
           {w}
@@ -75,19 +79,19 @@ export function BasicData({ view, clientId }: { view: BodyView; clientId: string
             sub={toTarget != null ? (toTarget > 0 ? `目標まで ${signed(toTarget)}kg` : '目標達成') : weight ? `${md(weight.date)}時点` : undefined}
             subTone={toTarget != null ? (toTarget > 0 ? 'danger' : 'ok') : undefined}
           />
-          <DataRow label="目標体重" value={num(goal?.targetWeightKg)} unit="kg" sub={goal ? `${md(goal.startDate)}に設定` : undefined} />
+          <DataRow label={goal?.policy === 'maintain' ? '維持する体重' : '目標体重'} value={num(goal?.targetWeightKg)} unit="kg" sub={goal?.targetWeightKg != null ? `${md(goal.startDate)}に設定` : undefined} />
           <DataRow label="体脂肪率" value={num(bodyFat?.value)} unit="%" sub={bodyFat && weight && bodyFat.date !== weight.date ? `${md(bodyFat.date)}時点` : undefined} />
           <DataRow label="BMI" value={num(comp.bmi)} />
           <DataRow label="体脂肪量" value={num(comp.fatMassKg)} unit="kg" />
           <DataRow label="除脂肪体重" value={num(comp.leanMassKg)} unit="kg" />
-          <DataRow label="活動係数" value={goal ? num(goal.activityFactor) : '—'} sub={goal ? activityLabel(settings, goal.activityFactor) : undefined} />
+          <DataRow label="活動係数" value={num(goal?.activityFactor)} sub={goal ? activityLabel(settings, goal.activityFactor) : undefined} />
         </div>
 
         <div className="space-y-1.5">
           <p className="mb-2 text-xs font-black text-ink-3">1日の目安</p>
           <DataRow label="基礎代謝" value={int(p.bmr)} unit="kcal" sub={BMR_METHODS[settings.bmrMethod].label} />
           <DataRow label="消費カロリー" value={int(p.tdee)} unit="kcal" sub="基礎代謝 × 活動係数" />
-          <DataRow label="削減カロリー" value={int(p.dailyDeficit)} unit="kcal" sub={pace ? `${pace.name}（−${pace.percentPerMonth}%／月）` : undefined} />
+          <DataRow label="削減カロリー" value={loss ? int(p.dailyDeficit) : '—'} unit="kcal" sub={pace ? `${pace.name}（−${pace.percentPerMonth}%／月）` : goal && !loss ? '減量中ではありません' : undefined} />
           <DataRow label="目標カロリー" value={int(goal ? p.targetKcal : null)} unit="kcal" emphasis />
           <DataRow label="たんぱく質" value={num(p.proteinG)} unit="g" sub={p.meatG != null ? `肉・魚なら約${int(p.meatG)}g` : undefined} />
           <DataRow label="脂質" value={num(goal ? p.fatG : null)} unit="g" />
@@ -130,7 +134,7 @@ export function GoalProgress({ view, clientId }: { view: BodyView; clientId: str
   const pr = view.progress
   const goal = view.goal
   if (!goal || !pr) {
-    return <EmptyState title="目標が設定されていません" action={{ href: `/clients/${clientId}/body?date=${view.base}`, label: '目標を設定する' }} />
+    return <EmptyState title="減量の目標が設定されていません" action={{ href: `/clients/${clientId}/plan?date=${view.base}#policy`, label: '食事方針を決める' }} />
   }
   const plannedPct = pr.totalKg > 0 ? Math.min(100, Math.max(0, ((pr.startWeightKg - pr.plannedWeightKg) / pr.totalKg) * 100)) : null
   const reached = pr.remainingKg <= 0
@@ -176,12 +180,17 @@ export function GoalProgress({ view, clientId }: { view: BodyView; clientId: str
           </div>
         ) : (
           <>
-            <div className={cn('rounded-xl p-4', pr.aheadKg >= 0 ? 'bg-ok-soft' : 'bg-warn-soft')}>
+            <div className={cn('rounded-xl p-4', pr.aheadKg > -0.05 ? 'bg-ok-soft' : 'bg-warn-soft')}>
               <p className="text-xs font-bold text-ink-2">予定ペースとの差</p>
-              <p className={cn('mt-1 text-lg font-black', pr.aheadKg >= 0 ? 'text-ok' : 'text-warn')}>
-                予定より{' '}
-                <span className="num">{num(Math.abs(pr.aheadKg))}kg</span>
-                {pr.aheadKg >= 0 ? ' 先行' : ' 遅れ'}
+              <p className={cn('mt-1 text-lg font-black', pr.aheadKg > -0.05 ? 'text-ok' : 'text-warn')}>
+                {Math.abs(pr.aheadKg) < 0.05 ? (
+                  '予定どおり'
+                ) : (
+                  <>
+                    予定より <span className="num">{num(Math.abs(pr.aheadKg))}kg</span>
+                    {pr.aheadKg >= 0 ? ' 先行' : ' 遅れ'}
+                  </>
+                )}
               </p>
               <p className="mt-0.5 text-xs text-ink-3">予定では今日 {num(pr.plannedWeightKg)}kg（開始から{pr.elapsedDays}日目）</p>
             </div>
@@ -236,8 +245,8 @@ function SummaryTile({ label, value, sub }: { label: string; value: string; sub?
 
 export function ChangeGoalLink({ clientId, base }: { clientId: string; base: string }) {
   return (
-    <Link href={`/clients/${clientId}/body?date=${base}#goal`} className="rounded-full bg-brand px-3 py-1 text-xs font-black text-ink hover:bg-brand-deep">
-      目標・ペースを変更
+    <Link href={`/clients/${clientId}/plan?date=${base}#policy`} className="rounded-full bg-brand px-3 py-1 text-xs font-black text-ink hover:bg-brand-deep">
+      食事方針・目標を変更
     </Link>
   )
 }

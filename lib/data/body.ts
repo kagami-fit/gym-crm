@@ -25,24 +25,51 @@ export async function getLatestBody(clientId: string, base: Ymd): Promise<{ weig
   }
 }
 
+/** 食事方針と目標の履歴の1件（policy：lib/labels.ts の DIET_POLICIES。目標体重・ペース・活動係数は方針によっては空） */
 export type GoalRow = {
   id: string
   startDate: Ymd
+  policy: string
+  policyName: string | null
   startWeightKg: number | null
   startBodyFatPct: number | null
-  targetWeightKg: number
-  paceKey: string
-  activityFactor: number
+  targetWeightKg: number | null
+  paceKey: string | null
+  activityFactor: number | null
+  targetDate: Ymd | null
+  endDate: Ymd | null
+  reviewDate: Ymd | null
   note: string | null
   createdAt: Date
 }
 
-export async function getGoals(clientId: string): Promise<GoalRow[]> {
-  const rows = await prisma.goal.findMany({ where: { clientId }, orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }] })
-  return rows.map((g) => ({ ...g, startDate: fromDbDate(g.startDate) }))
+type GoalRecord = Omit<GoalRow, 'startDate' | 'targetDate' | 'endDate' | 'reviewDate'> & { startDate: Date; targetDate: Date | null; endDate: Date | null; reviewDate: Date | null }
+
+export function toGoalRow(g: GoalRecord): GoalRow {
+  return {
+    id: g.id,
+    startDate: fromDbDate(g.startDate),
+    policy: g.policy,
+    policyName: g.policyName,
+    startWeightKg: g.startWeightKg,
+    startBodyFatPct: g.startBodyFatPct,
+    targetWeightKg: g.targetWeightKg,
+    paceKey: g.paceKey,
+    activityFactor: g.activityFactor,
+    targetDate: g.targetDate ? fromDbDate(g.targetDate) : null,
+    endDate: g.endDate ? fromDbDate(g.endDate) : null,
+    reviewDate: g.reviewDate ? fromDbDate(g.reviewDate) : null,
+    note: g.note,
+    createdAt: g.createdAt,
+  }
 }
 
-/** 基準日に有効な目標（開始日が基準日以前で最新） */
+export async function getGoals(clientId: string): Promise<GoalRow[]> {
+  const rows = await prisma.goal.findMany({ where: { clientId }, orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }] })
+  return rows.map(toGoalRow)
+}
+
+/** 基準日に有効な方針・目標（開始日が基準日以前で最新） */
 export function goalAt(goals: GoalRow[], base: Ymd): GoalRow | null {
   return goals.find((g) => g.startDate <= base) ?? null
 }

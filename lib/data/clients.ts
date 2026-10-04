@@ -2,8 +2,9 @@ import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { ageAt, fromDbDate, todayYmd, type Ymd } from '@/lib/dates'
-import type { ClientStatus } from '@/lib/labels'
+import { ageAt, fromDbDate, toDbDate, todayYmd, type Ymd } from '@/lib/dates'
+import { policyLabel, type ClientStatus } from '@/lib/labels'
+import { phaseAt, resolvePhases } from '@/lib/steps'
 
 export type ClientListRow = {
   id: string
@@ -18,6 +19,10 @@ export type ClientListRow = {
   lastVisit: Ymd | null
   latestWeight: { value: number; date: Ymd } | null
   targetWeight: number | null
+  /** 今日のフェーズ */
+  phase: { name: string; color: string } | null
+  /** 今日の食事方針（key と名前） */
+  policy: { key: string; label: string } | null
 }
 
 export async function listClients(opts: { q?: string; status?: ClientStatus | 'all' }): Promise<ClientListRow[]> {
@@ -40,7 +45,8 @@ export async function listClients(opts: { q?: string; status?: ClientStatus | 'a
       trainer: { select: { name: true } },
       bodyLogs: { where: { weightKg: { not: null } }, orderBy: { date: 'desc' }, take: 1, select: { date: true, weightKg: true } },
       sessions: { orderBy: { date: 'desc' }, take: 1, select: { date: true } },
-      goals: { orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }], take: 1, select: { targetWeightKg: true } },
+      goals: { where: { startDate: { lte: toDbDate(today) } }, orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }], take: 1, select: { targetWeightKg: true, policy: true, policyName: true } },
+      phases: { orderBy: { startDate: 'asc' }, select: { id: true, name: true, startDate: true, endDate: true } },
     },
   })
   return rows.map((c) => ({
@@ -56,6 +62,14 @@ export async function listClients(opts: { q?: string; status?: ClientStatus | 'a
     lastVisit: c.sessions[0] ? fromDbDate(c.sessions[0].date) : null,
     latestWeight: c.bodyLogs[0]?.weightKg != null ? { value: c.bodyLogs[0].weightKg, date: fromDbDate(c.bodyLogs[0].date) } : null,
     targetWeight: c.goals[0]?.targetWeightKg ?? null,
+    phase: (() => {
+      const p = phaseAt(
+        resolvePhases(c.phases.map((x) => ({ id: x.id, name: x.name, start: fromDbDate(x.startDate), end: x.endDate ? fromDbDate(x.endDate) : null, note: null }))),
+        today,
+      )
+      return p ? { name: p.name, color: p.color } : null
+    })(),
+    policy: c.goals[0] ? { key: c.goals[0].policy, label: policyLabel(c.goals[0].policy, c.goals[0].policyName) } : null,
   }))
 }
 

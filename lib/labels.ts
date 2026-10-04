@@ -41,21 +41,22 @@ export type TalkKind = (typeof TALK_KINDS)[number]['key']
 export const isTalkKind = (v: unknown): v is TalkKind => TALK_KINDS.some((k) => k.key === v)
 export const talkKindOf = (key: string) => TALK_KINDS.find((k) => k.key === key) ?? TALK_KINDS[0]
 
-/** 期（フェーズ）の名前の候補と、グラフの帯の色（帯には必ず名前も出す） */
 /**
- * 期の色。京角さんのプログラムの流れ（自律神経を整える期間 → ピラティスをしっかりやる期間 → 筋トレをやる期間）。
+ * フェーズの名前の候補（説明名は表示案）と、グラフの帯の色（帯には必ず名前も出す）。
+ * 2026-10-04 の整理：フェーズ1（体を整える：自律神経への対応とピラティスを並行）→ フェーズ2（目的に合わせて進める：筋トレと食事方針）。
  * 体重（金）・体脂肪率（青）のグラフの後ろに帯で敷くので、その2色とかぶらない色にしている
- * （となり合う期どうしは色覚の多様性でも見分けられる差。帯には期の名前も書く）
+ * （となり合うフェーズどうしは色覚の多様性でも見分けられる差。帯にはフェーズの名前も書く）
  */
 export const PHASE_PRESETS = [
-  { name: '自律神経期', color: '#c4497a' },
-  { name: 'ピラティス期', color: '#1baf7a' },
-  { name: '筋トレ期', color: '#8a63d2' },
+  { name: 'フェーズ1', sub: '体を整える', color: '#1baf7a' },
+  { name: 'フェーズ2', sub: '目的に合わせて進める', color: '#8a63d2' },
 ] as const
-/** 候補にない名前の期（「その他」扱い）の色 */
+/** 候補にない名前のフェーズ（「その他」扱い）の色 */
 export const PHASE_OTHER_COLOR = '#6a6456'
+/** フェーズ2の名前（移行チェックから進めるときに使う） */
+export const PHASE_2 = PHASE_PRESETS[1].name
 
-/** 期の名前 → 色（候補にない名前はすべて「その他」の灰色。帯とリストには名前も出すので区別できる） */
+/** フェーズの名前 → 色（候補にない名前はすべて「その他」の灰色。帯とリストには名前も出すので区別できる） */
 export function phaseColors(names: string[]): Map<string, string> {
   const out = new Map<string, string>()
   for (const n of names) {
@@ -64,6 +65,60 @@ export function phaseColors(names: string[]): Map<string, string> {
   }
   return out
 }
+
+/** フェーズの説明名（候補にない名前は空） */
+export const phaseSub = (name: string): string => PHASE_PRESETS.find((p) => p.name === name)?.sub ?? ''
+/** 「フェーズ1（体を整える）」の形 */
+export const phaseTitle = (name: string): string => (phaseSub(name) ? `${name}（${phaseSub(name)}）` : name)
+
+/** 来店頻度の候補 */
+export const VISIT_FREQUENCIES = ['週1回', '週2回', '週3回以上', '隔週', '月1回', '不定期'] as const
+
+/**
+ * 食事方針。phase はどのフェーズの方針か（選ぶときの並び。ほかのフェーズでも選べる）。
+ * 名前（「コーフラックス」など）はここだけで管理しているので、正式名が決まったらここを直す（保存は key なので記録はそのまま）。
+ */
+export const DIET_POLICIES = {
+  recovery: { label: '回復食', phase: 1, hint: '消化しやすい食事・生活習慣の見直しから' },
+  balance: { label: 'バランス食', phase: 1, hint: '状態に合わせて、バランスのよい食事へ' },
+  other: { label: 'そのほか', phase: 1, hint: '名前を入れて記録します' },
+  reverse: { label: 'コーフラックス', phase: 2, hint: '体重を増やさずに、摂取カロリーを上げていく期間。終了予定日を決めます' },
+  loss: { label: '減量', phase: 2, hint: '目標体重に向けて減らしていく期間' },
+  maintain: { label: '維持', phase: 2, hint: '今の体重・状態を保つ期間' },
+} as const
+export type DietPolicy = keyof typeof DIET_POLICIES
+export const isDietPolicy = (v: unknown): v is DietPolicy => typeof v === 'string' && v in DIET_POLICIES
+/** 方針の名前（「そのほか」は入れた名前） */
+export const policyLabel = (policy: string, name?: string | null): string =>
+  policy === 'other' && name?.trim() ? name.trim() : isDietPolicy(policy) ? DIET_POLICIES[policy].label : policy
+
+/** 自律神経の測定：活性度の棒とグレーゾーンとの位置（空＝未確認） */
+export const ANS_LEVELS = {
+  low: { label: '低い', tone: 'warn' },
+  normal: { label: '基準内', tone: 'ok' },
+  high: { label: '高い', tone: 'warn' },
+} as const
+export type AnsLevel = keyof typeof ANS_LEVELS
+export const isAnsLevel = (v: unknown): v is AnsLevel => typeof v === 'string' && v in ANS_LEVELS
+
+/** フェーズ1の型（A〜D）。文字との対応・条件は確認中のため、どれも「仮」として見せる。自動では分類しない */
+export const ANS_TYPES = {
+  A: '交感神経が高い型（仮）',
+  B: '副交感神経が低い型（仮）',
+  C: '両方が低い型',
+  D: '交感神経が低く、副交感神経は基準内に見える型（仮）',
+} as const
+export type AnsType = keyof typeof ANS_TYPES
+export const isAnsType = (v: unknown): v is AnsType => typeof v === 'string' && v in ANS_TYPES
+
+/** 体重の変化への担当者の評価 */
+export const WEIGHT_VERDICTS = {
+  expected: { label: '想定内', tone: 'ok' },
+  review: { label: '見直しが必要', tone: 'warn' },
+  hold: { label: '評価保留', tone: 'neutral' },
+} as const
+export type WeightVerdict = keyof typeof WEIGHT_VERDICTS
+export const isWeightVerdict = (v: unknown): v is WeightVerdict => typeof v === 'string' && v in WEIGHT_VERDICTS
 
 /** 宿題の結果 */
 export const HOMEWORK_STATUS = {

@@ -31,7 +31,22 @@ export function SimulatorForm({ settings, today }: { settings: CalcSettings; tod
     const p = plan(settings, body, { targetWeightKg: target, pace, activityFactor: n(v.activity) })
     const goal =
       target != null && pace
-        ? { id: 'sim', startDate: today, startWeightKg: weight, startBodyFatPct: body.bodyFatPct, targetWeightKg: target, paceKey: pace.key, activityFactor: n(v.activity) ?? 1.2, note: null, createdAt: new Date(0) }
+        ? {
+            id: 'sim',
+            startDate: today,
+            policy: 'loss',
+            policyName: null,
+            startWeightKg: weight,
+            startBodyFatPct: body.bodyFatPct,
+            targetWeightKg: target,
+            paceKey: pace.key,
+            activityFactor: n(v.activity) ?? 1.2,
+            targetDate: null,
+            endDate: null,
+            reviewDate: null,
+            note: null,
+            createdAt: new Date(0),
+          }
         : null
     const args = goal && p.dailyDeficit != null ? { baseDate: today, weightKg: weight, fatMassKg: p.composition.fatMassKg, targetWeightKg: goal.targetWeightKg, dailyDeficit: p.dailyDeficit } : null
     return {
@@ -115,7 +130,7 @@ export function SimulatorForm({ settings, today }: { settings: CalcSettings; tod
           <Section title="計算結果" en="Result">
             <BasicData view={view} clientId={null} />
           </Section>
-          {view.goal && view.months.length > 0 && (
+          {view.goal?.targetWeightKg != null && view.months.length > 0 && (
             <Section title="体重・体脂肪率の予測" en="Forecast">
               <div className="space-y-4">
                 <ProjectionSummary view={view} />

@@ -7,7 +7,9 @@ import * as R from '@/lib/alerts/rules'
 import { normalizeAlertSettings, type AlertSettings } from '@/lib/alerts/settings'
 import type { AppUser } from '@/lib/auth'
 import { getCalcSettings } from './settings'
-import { goalAt, type GoalRow } from './body'
+import { isLossPolicy, overdueItems } from '@/lib/plan'
+import { resolvePhases } from '@/lib/steps'
+import { goalAt, toGoalRow, type GoalRow } from './body'
 
 // お知らせ（アラート）の集計。自動のお知らせは毎回データから計算し、対応（AlertAction）で表示を切り替える。
 // 自分で作るお知らせ（Reminder）はそのまま読む。
@@ -61,7 +63,7 @@ async function buildBoard(clients: Array<{ id: string; name: string; status: str
   const board: AlertBoard = { open: [], nextVisit: [], upcoming: [], snoozed: [], done: [], muted: [] }
   if (!clients.length) return board
   const ids = clients.map((c) => c.id)
-  const [settings, calc, logs, lastVisits, sessions, weeks, notes, reminders, actions, goals] = await Promise.all([
+  const [settings, calc, logs, lastVisits, sessions, weeks, notes, reminders, actions, goals, phaseRows] = await Promise.all([
     getAlertSettings(),
     getCalcSettings(),
     prisma.bodyLog.findMany({ where: { clientId: { in: ids }, weightKg: { not: null }, date: { gte: toDbDate(addDays(today, -90)), lte: toDbDate(today) } }, select: { clientId: true, date: true, weightKg: true } }),
@@ -79,6 +81,7 @@ async function buildBoard(clients: Array<{ id: string; name: string; status: str
     }),
     prisma.alertAction.findMany({ where: { clientId: { in: ids } }, orderBy: { createdAt: 'asc' }, include: { by: { select: { name: true } } } }),
     prisma.goal.findMany({ where: { clientId: { in: ids } }, orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }] }),
+    prisma.clientPhase.findMany({ where: { clientId: { in: ids } }, orderBy: { startDate: 'asc' } }),
   ])
   const doneUsers = new Map((await prisma.user.findMany({ where: { id: { in: reminders.map((r) => r.doneById).filter((x): x is string => !!x) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]))
 
@@ -92,9 +95,10 @@ async function buildBoard(clients: Array<{ id: string; name: string; status: str
     if (c.status === 'active' || c.status === 'trial') {
       const pts = logs.filter((l) => l.clientId === c.id).map((l) => ({ date: fromDbDate(l.date), kg: l.weightKg! })).sort((a, b) => (a.date < b.date ? -1 : 1))
       const latest = pts[pts.length - 1] ?? null
-      const goalRows: GoalRow[] = goals.filter((g) => g.clientId === c.id).map((g) => ({ ...g, startDate: fromDbDate(g.startDate) }))
+      const goalRows: GoalRow[] = goals.filter((g) => g.clientId === c.id).map(toGoalRow)
       const goal = goalAt(goalRows, today)
-      const lossGoal = !!goal && !!latest && goal.targetWeightKg < latest.kg
+      // 体重の停滞・予定ペースより遅れは、食事方針が減量で、目標体重がいまの体重より下のときだけ
+      const lossGoal = isLossPolicy(goal) && goal?.targetWeightKg != null && !!latest && goal.targetWeightKg < latest.kg
       const found: R.AutoAlert[] = []
       let plateau: R.AutoAlert | null = null
       if (settings.plateau.enabled && lossGoal) {
@@ -115,7 +119,7 @@ async function buildBoard(clients: Array<{ id: string; name: string; status: str
         const d = R.noVisit(lastVisit, today, settings.noVisit)
         if (d) found.push(d)
       }
-      if (settings.behindPace.enabled && goal && lossGoal && latest) {
+      if (settings.behindPace.enabled && goal?.targetWeightKg != null && lossGoal && latest) {
         const pace = findPace(calc, goal.paceKey)
         const start = goal.startWeightKg ?? pts.find((p) => p.date >= goal.startDate)?.kg ?? null
         if (pace && start != null) {
@@ -123,6 +127,15 @@ async function buildBoard(clients: Array<{ id: string; name: string; status: str
           const d = R.behindPace(pr.aheadKg, settings.behindPace)
           if (d) found.push(d)
         }
+      }
+      if (settings.overdue.enabled && c.status === 'active') {
+        const phases = resolvePhases(
+          phaseRows
+            .filter((p) => p.clientId === c.id)
+            .map((p) => ({ id: p.id, name: p.name, start: fromDbDate(p.startDate), end: p.endDate ? fromDbDate(p.endDate) : null, note: p.note, reviewDate: p.reviewDate ? fromDbDate(p.reviewDate) : null })),
+        )
+        const d = R.overdue(overdueItems(phases, goal, today), settings.overdue)
+        if (d) found.push(d)
       }
       if (settings.talk.enabled) {
         const d = R.talk(
