@@ -945,6 +945,50 @@ async function seedDemoPlan(trainerId: string | null) {
   console.log('plan: デモの指導計画（フェーズ・食事方針・自律神経・動作・体調・体重の評価）を用意')
 }
 
+/**
+ * デモ顧客の問診票を、紙の「Resole カウンセリングカルテ」の項目に移す（SEED_DEMO=1 のとき1回だけ。AppSetting "demo:karte" に印を残す。2026-10-27）
+ * 前の項目のうち、カルテの質問と重なるもの（目的・なりたい姿・治療中の病気・痛み・運動習慣）を移して消す。ほかの前の回答は読み取り専用で残る
+ */
+async function seedDemoKarte() {
+  if (process.env.SEED_DEMO !== '1') return
+  if (await prisma.appSetting.findUnique({ where: { key: 'demo:karte' } })) return
+  const GOALS: Record<string, string> = {
+    'ダイエット（減量）': 'ダイエット',
+    ボディメイク: 'シェイプアップ',
+    筋力アップ: '筋肉を増やす',
+    '健康維持・体力向上': '体力の向上',
+    '肩こり・腰痛の改善': 'けが予防・改善',
+    '競技パフォーマンス向上': 'スポーツパフォーマンス向上',
+  }
+  const SOURCE: Record<string, string> = { Instagram: 'Instagram', 紹介: '友人・知人からの紹介', Web検索: 'Resole公式サイト' }
+  const rows = await prisma.questionnaire.findMany({ where: { client: { name: { startsWith: 'デモ ' } } }, include: { client: { select: { referral: true } } } })
+  for (const q of rows) {
+    const a = { ...((q.answers ?? {}) as Record<string, unknown>) }
+    if (a.source) continue
+    const old = Array.isArray(a.purposes) ? (a.purposes as string[]) : []
+    const goals = [...new Set(old.map((p) => GOALS[p] ?? 'その他'))]
+    const others = old.filter((p) => !GOALS[p] && p !== 'その他')
+    const habit =
+      a.exerciseHabit === '週1〜2回' ? '運動習慣あり。ジムやスポーツを週に1〜2回' : a.exerciseHabit === '週3回以上' ? '運動習慣あり。ジムやスポーツを週に3回以上' : a.workStyle === 'デスクワーク中心' ? '運動習慣なし。デスクワーク中心' : a.exerciseHabit ? '運動習慣なし。よく歩く' : undefined
+    const next: Record<string, unknown> = {
+      source: [SOURCE[q.client.referral ?? ''] ?? 'その他'],
+      ...(habit ? { habit } : {}),
+      ...(a.exerciseDetail ? { habitNote: a.exerciseDetail } : {}),
+      ...(goals.length ? { goals } : {}),
+      ...(others.length ? { goalsNote: others.join('・') } : {}),
+      ...(a.underTreatment ? { illness: a.underTreatment, illness__detail: a.underTreatment__detail } : {}),
+      injury: 'なし',
+      ...(a.currentPain ? { discomfort: a.currentPain, discomfort__detail: a.currentPain__detail } : {}),
+      ...(a.goalDetail ? { wish: a.goalDetail } : {}),
+    }
+    for (const k of ['purposes', 'goalDetail', 'underTreatment', 'underTreatment__detail', 'currentPain', 'currentPain__detail', 'exerciseHabit', 'exerciseDetail']) delete a[k]
+    for (const [k, v] of Object.entries(next)) if (v != null && v !== '') a[k] = v
+    await prisma.questionnaire.update({ where: { id: q.id }, data: { answers: a as Prisma.InputJsonValue } })
+  }
+  await prisma.appSetting.create({ data: { key: 'demo:karte', value: { at: todayYmd() } } })
+  console.log(`karte: デモの問診票 ${rows.length}件をカルテの項目に移した`)
+}
+
 async function main() {
   await seedSettings()
   await seedExercises()
@@ -957,6 +1001,7 @@ async function main() {
   await seedDemoSteps(ownerId ?? demoUserId)
   await seedDemoPurposes()
   await seedDemoPlan(ownerId ?? demoUserId)
+  await seedDemoKarte()
 }
 
 main()

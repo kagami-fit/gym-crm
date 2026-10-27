@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Badge, EmptyState, Notice, Value } from '@/components/ui'
+import { Notice, Value } from '@/components/ui'
 import { PfcDonut } from '@/components/charts/PfcDonut'
 import { BMR_METHODS, activityLabel } from '@/lib/calc/settings'
 import { addDays, diffDays, md, ymdJa } from '@/lib/dates'
@@ -126,97 +126,6 @@ export function BasicData({ view, clientId }: { view: BodyView; clientId: string
           </dl>
         </div>
       </div>
-    </div>
-  )
-}
-
-export function GoalProgress({ view, clientId }: { view: BodyView; clientId: string }) {
-  const pr = view.progress
-  const goal = view.goal
-  if (!goal || !pr) {
-    return <EmptyState title="減量の目標が設定されていません" action={{ href: `/clients/${clientId}/plan?date=${view.base}#policy`, label: '食事方針を決める' }} />
-  }
-  const plannedPct = pr.totalKg > 0 ? Math.min(100, Math.max(0, ((pr.startWeightKg - pr.plannedWeightKg) / pr.totalKg) * 100)) : null
-  const reached = pr.remainingKg <= 0
-  const goalDate = view.plan.daysToGoal != null ? addDays(view.base, Math.ceil(view.plan.daysToGoal)) : null
-
-  return (
-    <div className="grid gap-5 md:grid-cols-[1fr_17rem] lg:grid-cols-[1fr_20rem]">
-      <div>
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <Figure label={`開始（${md(pr.startDate)}）`} value={num(pr.startWeightKg)} />
-          <Figure label={`現在（${view.weight ? md(view.weight.date) : '—'}）`} value={num(pr.currentWeightKg)} strong />
-          <Figure label="目標" value={num(pr.targetWeightKg)} />
-        </div>
-        <div className="mt-5">
-          <div className="flex items-baseline justify-between text-sm">
-            <span className="font-bold text-ink-2">
-              開始から <span className="num text-base text-ink">{signed(-pr.achievedKg)}kg</span>
-            </span>
-            {pr.progressPct != null && (
-              <span className="font-bold text-ink-2">
-                達成率 <span className="num text-base text-ink">{Math.round(pr.progressPct)}%</span>
-              </span>
-            )}
-          </div>
-          <div className="relative mt-2 h-3 rounded-full bg-brand-soft ring-1 ring-inset ring-brand-deep/40" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pr.progressPct ?? 0)} aria-label="目標の達成率">
-            <div className="h-3 rounded-full bg-gold" style={{ width: `${pr.progressPct ?? 0}%` }} />
-            {plannedPct != null && !reached && (
-              <div className="absolute -top-1 h-5 w-0.5 bg-ink-2" style={{ left: `calc(${plannedPct}% - 1px)` }} aria-hidden>
-                <span className="absolute left-1/2 top-5 -translate-x-1/2 whitespace-nowrap text-[10px] font-bold text-ink-2">予定</span>
-              </div>
-            )}
-          </div>
-          <p className="mt-6 text-xs text-ink-3">
-            {md(pr.startDate)}の設定：{view.pace?.name}（−{view.pace?.percentPerMonth}%／月）。縦線は今日時点で予定どおりなら到達している位置です。
-          </p>
-        </div>
-      </div>
-      <div className="space-y-2">
-        {reached ? (
-          <div className="rounded-xl bg-ok-soft p-4">
-            <Badge tone="ok">目標達成</Badge>
-            <p className="mt-2 text-sm text-ok">目標体重に到達しています。次の目標を設定しましょう。</p>
-          </div>
-        ) : (
-          <>
-            <div className={cn('rounded-xl p-4', pr.aheadKg > -0.05 ? 'bg-ok-soft' : 'bg-warn-soft')}>
-              <p className="text-xs font-bold text-ink-2">予定ペースとの差</p>
-              <p className={cn('mt-1 text-lg font-black', pr.aheadKg > -0.05 ? 'text-ok' : 'text-warn')}>
-                {Math.abs(pr.aheadKg) < 0.05 ? (
-                  '予定どおり'
-                ) : (
-                  <>
-                    予定より <span className="num">{num(Math.abs(pr.aheadKg))}kg</span>
-                    {pr.aheadKg >= 0 ? ' 先行' : ' 遅れ'}
-                  </>
-                )}
-              </p>
-              <p className="mt-0.5 text-xs text-ink-3">予定では今日 {num(pr.plannedWeightKg)}kg（開始から{pr.elapsedDays}日目）</p>
-            </div>
-            <div className="rounded-xl bg-soft p-4">
-              <p className="text-xs font-bold text-ink-2">目標達成予定日（今の体重から）</p>
-              <p className="mt-1 text-lg font-black text-ink">{goalDate ? ymdJa(goalDate) : '—'}</p>
-              <p className="mt-0.5 text-xs text-ink-3">
-                {goalDate ? `あと${diffDays(view.base, goalDate)}日・残り${num(pr.remainingKg)}kg` : ''}
-                {pr.plannedGoalDate ? `（開始時の予定：${md(pr.plannedGoalDate)}）` : ''}
-              </p>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function Figure({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div className={cn('rounded-xl px-2 py-3', strong ? 'bg-dark text-white' : 'bg-soft')}>
-      <p className={cn('text-xs font-bold', strong ? 'text-white/80' : 'text-ink-3')}>{label}</p>
-      <p className="mt-1 text-2xl">
-        <span className="num font-semibold">{value}</span>
-        {value !== '—' && <span className={cn('ml-0.5 text-sm font-bold', strong ? 'text-white/70' : 'text-ink-3')}>kg</span>}
-      </p>
     </div>
   )
 }

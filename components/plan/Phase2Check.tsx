@@ -4,15 +4,12 @@ import { useState } from 'react'
 import { ArrowRight, Loader2 } from 'lucide-react'
 import { savePhaseAction } from '@/app/(app)/clients/[id]/plan/actions'
 import { Field, buttonClass, inputClass } from '@/components/ui'
-import { CONDITION_ITEMS } from '@/lib/condition'
-import type { AnsRow } from '@/lib/data/ans'
-import type { ConditionRow, MovementCheckRow } from '@/lib/data/plan'
-import { md, type Ymd } from '@/lib/dates'
+import type { MovementCheckRow } from '@/lib/data/plan'
+import type { Ymd } from '@/lib/dates'
 import { PHASE_2 } from '@/lib/labels'
 import { MOVEMENTS } from '@/lib/movements'
-import { ansState } from '@/lib/plan'
-import { cn } from '@/lib/utils'
-import { AnsLevelChip, ConditionChip, MovementChip } from './Chips'
+import { AnsGallery, type AnsFile } from './AnsGallery'
+import { MovementChip } from './Chips'
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -28,22 +25,21 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 
 /**
  * フェーズ2への移行チェック（フェーズ1の間だけ出す）。
- * 自律神経・痛みや不調の経過・基礎動作を同じ画面で見て、担当者が理由を書いてから進める。
- * 測定結果だけで自動では変えない。何回の測定で確認するか・どの動作を必須にするかは未確定なので、判定はしない。
+ * 自律神経の測定票（最新と前回）と基礎動作を同じ画面で見て、担当者が理由を書いてから進める。
+ * 自動では変えない。何回の測定で確認するか・どの動作を必須にするかは未確定なので、判定はしない。
+ * （痛み・不調の経過は、体調チェックをいったん画面から外したため出していない）
  */
 export function Phase2Check({
   clientId,
   base,
   ans,
-  conditions,
   movements,
   visitFrequency,
 }: {
   clientId: string
   base: Ymd
   /** 新しい順 */
-  ans: AnsRow[]
-  conditions: ConditionRow[]
+  ans: AnsFile[]
   movements: Record<string, MovementCheckRow | undefined>
   visitFrequency: string | null
 }) {
@@ -52,11 +48,6 @@ export function Phase2Check({
   const [reason, setReason] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const latest = ans[0] ?? null
-  const previous = ans[1] ?? null
-  const st = ansState(latest)
-  const first = conditions[0]
-  const last = conditions[conditions.length - 1]
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -74,50 +65,18 @@ export function Phase2Check({
   return (
     <div className="rounded-xl border border-line bg-soft p-4">
       <p className="text-base font-black">フェーズ2への移行チェック</p>
-      <p className="mt-0.5 text-sm text-ink-2">測定結果だけで自動では変えません。下の3つを見て、担当者が理由を書いてから進めます。</p>
+      <p className="mt-0.5 text-sm text-ink-2">自動では変えません。測定票と基礎動作を見て、担当者が理由を書いてから進めます。</p>
       <ol className="mt-3 divide-y divide-line">
-        <Step n={1} title="自律神経：交感神経・副交感神経が両方基準内か">
-          {latest ? (
-            <div className="space-y-1 text-sm">
-              <p className="flex flex-wrap items-center gap-1.5">
-                <span className="num text-ink-3">{md(latest.measuredOn)}</span>
-                交感神経 <AnsLevelChip level={latest.sympatheticLevel} /> 副交感神経 <AnsLevelChip level={latest.parasympatheticLevel} />
-                <span className={cn('font-bold', st.state === 'good' ? 'text-ok' : 'text-ink-2')}>{st.text}</span>
-              </p>
-              {previous && (
-                <p className="flex flex-wrap items-center gap-1.5 text-ink-3">
-                  <span className="num">{md(previous.measuredOn)}</span>（前回） {ansState(previous).text}
-                </p>
-              )}
+        <Step n={1} title="自律神経：最新と前回の測定票を見比べる">
+          {ans.length ? (
+            <div className="max-w-xl">
+              <AnsGallery files={ans} mode="compare" />
             </div>
           ) : (
             <p className="text-sm text-ink-3">まだ測定結果がありません</p>
           )}
         </Step>
-        <Step n={2} title="痛み・不調の変化">
-          {first ? (
-            <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm">
-              {CONDITION_ITEMS.map((it) => (
-                <li key={it.key} className="flex items-center gap-1">
-                  {it.label}
-                  <ConditionChip level={first.items[it.key]} />
-                  {last && last.id !== first.id && (
-                    <>
-                      →<ConditionChip level={last.items[it.key]} />
-                    </>
-                  )}
-                </li>
-              ))}
-              <li className="num w-full text-xs text-ink-3">
-                初回 {md(first.date)}
-                {last && last.id !== first.id ? ` → 最新 ${md(last.date)}` : ''}
-              </li>
-            </ul>
-          ) : (
-            <p className="text-sm text-ink-3">まだ体調チェックがありません</p>
-          )}
-        </Step>
-        <Step n={3} title="ピラティスによる基礎動作の達成状況">
+        <Step n={2} title="ピラティスによる基礎動作の達成状況">
           <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm">
             {MOVEMENTS.map((m) => (
               <li key={m.key} className="flex items-center gap-1">
@@ -127,7 +86,7 @@ export function Phase2Check({
             ))}
           </ul>
         </Step>
-        <Step n={4} title="次の段階へ進めると判断した理由">
+        <Step n={3} title="次の段階へ進めると判断した理由">
           {open ? (
             <form onSubmit={submit} className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-[11rem_minmax(0,1fr)]">

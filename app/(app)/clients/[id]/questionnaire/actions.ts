@@ -5,13 +5,16 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { requireUser } from '@/lib/session'
 import { isYmd, toDbDate } from '@/lib/dates'
-import { parseAnswers } from '@/lib/questionnaire'
+import { CURRENT_KEYS, asAnswers, parseAnswers } from '@/lib/questionnaire'
 import type { ActionState } from '@/components/SubmitButton'
 
 export async function saveQuestionnaireAction(clientId: string, _prev: ActionState, fd: FormData): Promise<ActionState> {
   const user = await requireUser()
   const answeredOn = String(fd.get('answeredOn') ?? '')
-  const answers = parseAnswers(fd) as Prisma.InputJsonValue
+  // 前の問診票の回答（いまの入力欄にない項目）は消さずに残す
+  const prev = await prisma.questionnaire.findUnique({ where: { clientId }, select: { answers: true } })
+  const kept = Object.fromEntries(Object.entries(asAnswers(prev?.answers)).filter(([k]) => !CURRENT_KEYS.has(k)))
+  const answers = { ...kept, ...parseAnswers(fd) } as Prisma.InputJsonValue
   const data = { answeredOn: isYmd(answeredOn) ? toDbDate(answeredOn) : null, answers, updatedById: user.id }
   await prisma.questionnaire.upsert({ where: { clientId }, update: data, create: { clientId, ...data } })
   revalidatePath(`/clients/${clientId}`, 'layout')

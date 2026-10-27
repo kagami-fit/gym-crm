@@ -32,7 +32,7 @@ export function latestMovements(rows: MovementCheckRow[], base: Ymd): Record<str
 
 export type ConditionRow = { id: string; date: Ymd; items: ConditionItems; painArea: string | null; note: string | null }
 
-/** 体調チェック（古い順） */
+/** 体調チェック（古い順）。2026-10 から画面ではいったん使っていない（データは残す） */
 export async function getConditionChecks(clientId: string): Promise<ConditionRow[]> {
   const rows = await prisma.conditionCheck.findMany({ where: { clientId }, orderBy: { date: 'asc' } })
   return rows.map((r) => ({ id: r.id, date: fromDbDate(r.date), items: cleanConditionItems(r.items), painArea: r.painArea, note: r.note }))
@@ -58,7 +58,6 @@ export type PlanView = {
   ans: AnsRow[]
   ansNow: { state: ReturnType<typeof ansState>; latest: AnsRow | null; previous: AnsRow | null }
   movements: MovementCheckRow[]
-  conditions: ConditionRow[]
   checkpoints: string[]
   overdue: OverdueItem[]
   /** 実際の来店ペース（週あたり） */
@@ -66,12 +65,11 @@ export type PlanView = {
 }
 
 export const getPlanView = cache(async (clientId: string, base: Ymd): Promise<PlanView> => {
-  const [phases, goals, ansAll, movements, conditions, visits] = await Promise.all([
+  const [phases, goals, ansAll, movements, visits] = await Promise.all([
     getPhases(clientId),
     getGoals(clientId),
     getAnsMeasurements(clientId),
     getMovementChecks(clientId),
-    getConditionChecks(clientId),
     prisma.trainingSession.findMany({ where: { clientId }, select: { date: true }, orderBy: { date: 'desc' }, take: 120 }),
   ])
   const phase = phaseAt(phases, base)
@@ -86,7 +84,6 @@ export const getPlanView = cache(async (clientId: string, base: Ymd): Promise<Pl
     ans,
     ansNow: { state: ansState(ans[0] ?? null), latest: ans[0] ?? null, previous: ans[1] ?? null },
     movements,
-    conditions: conditions.filter((c) => c.date <= base),
     checkpoints: checkpoints(phase?.name ?? null, policy?.policy ?? null),
     overdue: overdueItems(phases, policy, base),
     visitsPerWeek: visitsPerWeek(

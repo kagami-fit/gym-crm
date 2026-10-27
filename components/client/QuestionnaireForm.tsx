@@ -44,16 +44,16 @@ export function QuestionnaireForm({ action, answers, answeredOn }: { action: (p:
                     <div>
                       <p className="text-sm font-bold">{f.label}</p>
                       <div className="mt-2">
-                        <Pills name={f.key} defaultValue={text(f.key)} options={[{ value: 'なし', label: 'なし' }, { value: 'あり', label: 'あり' }]} />
+                        <Pills name={f.key} defaultValue={text(f.key)} options={[{ value: 'なし', label: f.yesNo?.[1] ?? 'なし' }, { value: 'あり', label: f.yesNo?.[0] ?? 'あり' }]} />
                       </div>
                     </div>
-                    <input name={detailKey(f.key)} defaultValue={text(detailKey(f.key))} maxLength={500} className={`${inputClass} sm:mt-7`} placeholder={`「あり」の場合：${f.detailPlaceholder ?? '詳細'}`} aria-label={`${f.label}の詳細`} />
+                    <input name={detailKey(f.key)} defaultValue={text(detailKey(f.key))} maxLength={500} className={`${inputClass} sm:mt-7`} placeholder={`「${f.yesNo?.[0] ?? 'あり'}」の場合：${f.detailPlaceholder ?? '詳細'}`} aria-label={`${f.label}の詳細`} />
                   </div>
                 )
               if (f.type === 'textarea')
                 return (
                   <Field key={f.key} label={f.label}>
-                    <textarea name={f.key} defaultValue={text(f.key)} rows={3} maxLength={2000} className={inputClass} placeholder={f.placeholder} />
+                    <textarea name={f.key} defaultValue={text(f.key)} rows={f.key === 'concerns' || f.key === 'karteNotes' ? 6 : 3} maxLength={2000} className={inputClass} placeholder={f.placeholder} />
                   </Field>
                 )
               return (

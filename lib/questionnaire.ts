@@ -1,17 +1,65 @@
 // 問診票の項目定義。ここを書き換えれば画面と保存内容が変わる（回答はJSONで保存しているのでDBの変更は不要）。
-// 初回カウンセリングのカルテの内容が決まったら、ここに項目を足す。
+// 2026-10-27：紙の「Resole カウンセリングカルテ」と同じ並び・選択肢に作り直した（QUESTIONNAIRE）。
+// 前の問診票の項目（LEGACY_QUESTIONNAIRE）は入力欄から外し、すでに入っている回答だけ読み取り専用で出す（注意事項にも使う）。
 
 export type QField =
   | { key: string; label: string; type: 'text'; placeholder?: string; hint?: string }
   | { key: string; label: string; type: 'textarea'; placeholder?: string; hint?: string }
   | { key: string; label: string; type: 'radio'; options: string[]; hint?: string }
   | { key: string; label: string; type: 'checkbox'; options: string[]; hint?: string }
-  /** あり／なし＋詳細。「あり」のとき注意事項として概要にも表示する */
-  | { key: string; label: string; type: 'yesno'; detailPlaceholder?: string; alert?: boolean }
+  /**
+   * あり／なし＋詳細。「あり」のとき注意事項として概要にも表示する（alertLabel はそのときの短い名前）。
+   * 保存する値はいつも「あり」「なし」。画面のボタンの文字だけ yesNo で変えられる（カルテは「はい」「いいえ」）
+   */
+  | { key: string; label: string; type: 'yesno'; detailPlaceholder?: string; alert?: boolean; alertLabel?: string; yesNo?: [string, string] }
 
 export type QSection = { key: string; title: string; fields: QField[] }
 
+/** Resole カウンセリングカルテ（紙と同じ1〜7の質問）と、カウンセリングで聞いたことのまとめ */
 export const QUESTIONNAIRE: QSection[] = [
+  {
+    key: 'karte',
+    title: 'Resole カウンセリングカルテ',
+    fields: [
+      { key: 'karteWeight', label: '体重（カルテに書いた値）', type: 'text', placeholder: '例：65kg' },
+      { key: 'karteTargetWeight', label: '目標体重（任意）', type: 'text', placeholder: '例：53kg（ベスト52kg）' },
+      { key: 'source', label: '1. Resoleを何から見聞きして知りましたか？', type: 'checkbox', options: ['Twitter', 'Instagram', 'Facebook', 'Resole公式サイト', 'オンラインサロン', '友人・知人からの紹介', 'その他'] },
+      { key: 'sourceNote', label: '1. の「その他」・書き込み', type: 'text', placeholder: '例：Instagram広告／ネットで見つけた' },
+      {
+        key: 'habit',
+        label: '2. 運動習慣について、当てはまるもの',
+        type: 'radio',
+        options: ['運動習慣なし。デスクワーク中心', '運動習慣なし。よく歩く', '運動習慣あり。ジムやスポーツを週に1〜2回', '運動習慣あり。ジムやスポーツを週に3回以上'],
+      },
+      { key: 'habitNote', label: '2. 運動の内容・書き込み', type: 'text', placeholder: '例：ピラティス、トレーニング、有酸素' },
+      { key: 'goals', label: '3. Resoleご利用の目的（複数可）', type: 'checkbox', options: ['シェイプアップ', 'ダイエット', '筋肉を増やす', '体力の向上', '柔軟性の向上', 'スポーツパフォーマンス向上', 'けが予防・改善', 'その他'] },
+      { key: 'goalsNote', label: '3. の「その他」・書き込み', type: 'text', placeholder: '例：子どもと遊ぶため' },
+      { key: 'illness', label: '4. 現在かかっている病気はありますか？', type: 'yesno', yesNo: ['はい', 'いいえ'], detailPlaceholder: '具体的な病名', alert: true, alertLabel: '治療中の病気' },
+      { key: 'injury', label: '5. 現在ケガをしている場所はありますか？', type: 'yesno', yesNo: ['はい', 'いいえ'], detailPlaceholder: '具体的な部位', alert: true, alertLabel: 'ケガ' },
+      {
+        key: 'discomfort',
+        label: '6. 肩こり腰痛など、ケガというほどではないが調子の悪い部位はありますか？',
+        type: 'yesno',
+        yesNo: ['はい', 'いいえ'],
+        detailPlaceholder: '具体的な部位',
+        alert: true,
+        alertLabel: '調子の悪い部位',
+      },
+      { key: 'wish', label: '7. Resoleでお客様が達成したい目標', type: 'textarea' },
+    ],
+  },
+  {
+    key: 'summary',
+    title: '目標・要望まとめ（カウンセリングで聞いたこと）',
+    fields: [
+      { key: 'concerns', label: '目標・悩み（優先順位・気になる部位など）', type: 'textarea', placeholder: '例：①姿勢×ボディライン　産後で骨の歪みを感じる…' },
+      { key: 'karteNotes', label: 'カルテへの書き込み・聞き取りメモ', type: 'textarea', placeholder: '余白や欄外に書いたこと' },
+    ],
+  },
+]
+
+/** 前の問診票の項目（2026-10-27 まで）。入力欄には出さず、すでに入っている回答を読み取り専用で出す */
+export const LEGACY_QUESTIONNAIRE: QSection[] = [
   {
     key: 'purpose',
     title: 'ご来店の目的',
@@ -135,13 +183,30 @@ export function asAnswers(value: unknown): QAnswers {
   return out
 }
 
-/** 概要やヘッダーに出す注意事項（「あり」の項目と既往歴） */
+/** いまの入力欄の項目のキー（詳細の欄も含む）。これ以外の回答は前の問診票のもの */
+export const CURRENT_KEYS = new Set(QUESTIONNAIRE.flatMap((s) => s.fields.flatMap((f) => (f.type === 'yesno' ? [f.key, detailKey(f.key)] : [f.key]))))
+
+/** 前の問診票の回答のうち、入っているもの（読み取り専用の表示用） */
+export function legacyAnswers(a: QAnswers): Array<{ label: string; value: string }> {
+  const out: Array<{ label: string; value: string }> = []
+  for (const section of LEGACY_QUESTIONNAIRE) {
+    for (const f of section.fields) {
+      const v = a[f.key]
+      const detail = f.type === 'yesno' ? a[detailKey(f.key)] : undefined
+      const text = [Array.isArray(v) ? v.join('・') : v, typeof detail === 'string' ? detail : ''].filter(Boolean).join('：')
+      if (text) out.push({ label: f.label, value: text })
+    }
+  }
+  return out
+}
+
+/** 概要やヘッダーに出す注意事項（「あり」の項目と既往歴。前の問診票の回答も見る） */
 export function alertsOf(a: QAnswers): Array<{ label: string; detail: string }> {
   const out: Array<{ label: string; detail: string }> = []
-  for (const section of QUESTIONNAIRE) {
+  for (const section of [...QUESTIONNAIRE, ...LEGACY_QUESTIONNAIRE]) {
     for (const f of section.fields) {
       if (f.type === 'yesno' && f.alert && a[f.key] === 'あり') {
-        out.push({ label: f.label, detail: String(a[detailKey(f.key)] ?? '') })
+        out.push({ label: f.alertLabel ?? f.label, detail: String(a[detailKey(f.key)] ?? '') })
       }
       if (f.key === 'history' && Array.isArray(a.history) && a.history.length) {
         out.push({ label: '既往歴', detail: [a.history.join('・'), typeof a.historyDetail === 'string' ? a.historyDetail : ''].filter(Boolean).join('／') })

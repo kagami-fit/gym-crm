@@ -76,7 +76,7 @@ export default async function BodyPage({ params, searchParams }: { params: Promi
         }
       >
         <div className="space-y-5">
-          <WeightEvaluation view={view} reviews={reviews} nutrition={Object.values(nutrition)} clientId={id} showProgress />
+          <WeightEvaluation view={view} reviews={reviews} nutrition={Object.values(nutrition)} clientId={id} />
           <div>
             <h3 className="mb-2 text-sm font-black">担当者の評価を記録する</h3>
             <p className="mb-3 text-sm text-ink-2">体重の変化が、いまの方針から見て想定内か・見直しが必要か・まだ評価しないかを、理由と一緒に残します。数字だけで自動では判定しません。</p>

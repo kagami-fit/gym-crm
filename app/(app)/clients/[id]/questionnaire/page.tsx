@@ -4,7 +4,7 @@ import { Section } from '@/components/ui'
 import { getClient } from '@/lib/data/clients'
 import { getQuestionnaire } from '@/lib/data/questionnaire'
 import { todayYmd, ymdJa } from '@/lib/dates'
-import { alertsOf } from '@/lib/questionnaire'
+import { alertsOf, legacyAnswers } from '@/lib/questionnaire'
 import { requireUser } from '@/lib/session'
 import { saveQuestionnaireAction } from './actions'
 
@@ -18,6 +18,7 @@ export default async function QuestionnairePage({ params }: { params: Promise<{ 
   const { id } = await params
   const q = await getQuestionnaire(id)
   const alerts = q ? alertsOf(q.answers) : []
+  const legacy = q ? legacyAnswers(q.answers) : []
   return (
     <div className="space-y-5">
       <Section title="指導の前に確認すること" en="Check" aside={q?.answeredOn ? <span className="text-white/80">記入日 {ymdJa(q.answeredOn)}</span> : undefined}>
@@ -38,6 +39,19 @@ export default async function QuestionnairePage({ params }: { params: Promise<{ 
         )}
       </Section>
       <QuestionnaireForm action={saveQuestionnaireAction.bind(null, id)} answers={q?.answers ?? {}} answeredOn={q?.answeredOn ?? todayYmd()} />
+      {legacy.length > 0 && (
+        <Section title="前の問診票の回答（読み取り専用）" en="Previous">
+          <p className="mb-3 text-sm text-ink-2">2026年10月にカルテの書式に合わせて問診票を作り直す前に入れた回答です。保存しても消えません。</p>
+          <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+            {legacy.map((l) => (
+              <div key={l.label} className="border-b border-line pb-2">
+                <dt className="text-xs font-bold text-ink-3">{l.label}</dt>
+                <dd className="text-sm">{l.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </Section>
+      )}
     </div>
   )
 }

@@ -66,7 +66,9 @@ export async function getFocusInfo(clientId: string, base: Ymd): Promise<FocusIn
     }),
   ])
   const answers = q?.answers ?? {}
-  const qPurposes = Array.isArray(answers.purposes) ? answers.purposes.filter((p) => p !== 'その他') : []
+  // 目的：カルテの「ご利用の目的」（前の問診票なら purposes）
+  const qGoals = Array.isArray(answers.goals) ? answers.goals : Array.isArray(answers.purposes) ? answers.purposes : []
+  const qPurposes = qGoals.filter((p) => p !== 'その他')
 
   const goal = goalAt(goals, base)
   let g: FocusInfo['goal'] = null
@@ -107,7 +109,7 @@ export async function getFocusInfo(clientId: string, base: Ymd): Promise<FocusIn
 
   return {
     purposes: client.purposes.length ? client.purposes : qPurposes,
-    wish: text(answers.goalDetail),
+    wish: text(answers.wish) ?? text(answers.goalDetail),
     deadline: text(answers.deadline),
     goal: g,
     cautions: q ? alertsOf(q.answers) : [],

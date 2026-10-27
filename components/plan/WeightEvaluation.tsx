@@ -1,10 +1,9 @@
 import Link from 'next/link'
-import { GoalProgress } from '@/components/client/BodyBlocks'
 import { Badge } from '@/components/ui'
 import type { WeightReviewRow } from '@/lib/data/plan'
 import type { NutritionRow } from '@/lib/data/nutrition'
 import type { BodyView } from '@/lib/data/overview'
-import { addDays, diffDays, md, weekStartOf, type Ymd } from '@/lib/dates'
+import { addDays, diffDays, md, weekStartOf, ymdJa, type Ymd } from '@/lib/dates'
 import { int, num, signed } from '@/lib/format'
 import { DIET_POLICIES, WEIGHT_VERDICTS, policyLabel } from '@/lib/labels'
 import { FAST_WEEKLY_PCT, GUIDE_DAYS, GUIDE_PCT, lossGuide, reversePeriods, weeklyChange, weightChangePct } from '@/lib/plan'
@@ -32,9 +31,59 @@ function weightNear(points: BodyView['points'], day: Ymd): number | null {
   return [...withW].reverse().find((p) => p.date <= day)?.weightKg ?? withW.find((p) => p.date >= day)?.weightKg ?? null
 }
 
+/** 減量の進み具合（開始 → いま → 目標の帯と、何kg減ったか・あと何kgか・達成率） */
+function LossProgress({ pr }: { pr: NonNullable<BodyView['progress']> }) {
+  const reached = pr.remainingKg <= 0
+  const pct = pr.progressPct
+  return (
+    <div className="rounded-xl border border-line bg-white p-4">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold text-ink-3">開始（{md(pr.startDate)}）</p>
+          <p className="num text-xl font-semibold">{num(pr.startWeightKg)}kg</p>
+        </div>
+        <div className="text-center">
+          <p className="text-xs font-bold text-ink-3">いま</p>
+          <p className="num text-3xl font-black">{num(pr.currentWeightKg)}kg</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs font-bold text-ink-3">目標</p>
+          <p className="num text-xl font-semibold">{num(pr.targetWeightKg)}kg</p>
+        </div>
+      </div>
+      <div className="mt-3 h-4 rounded-full bg-brand-soft ring-1 ring-inset ring-brand-deep/40" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct ?? 0)} aria-label="目標までの達成率">
+        <div className="h-4 rounded-full bg-gold" style={{ width: `${pct ?? 0}%` }} />
+      </div>
+      <p className="mt-3 text-lg font-black">
+        {reached ? (
+          '目標体重に届きました'
+        ) : pr.achievedKg >= 0 ? (
+          <>
+            開始から <span className="num">{num(pr.achievedKg)}kg</span> 減りました
+          </>
+        ) : (
+          <>
+            開始から <span className="num">{num(-pr.achievedKg)}kg</span> 増えています
+          </>
+        )}
+        {!reached && (
+          <span className="ml-2 text-base font-bold text-ink-2">
+            目標まで あと <span className="num">{num(pr.remainingKg)}kg</span>
+          </span>
+        )}
+      </p>
+      {pct != null && !reached && (
+        <p className="text-sm text-ink-2">
+          減らしたい <span className="num">{num(pr.totalKg)}kg</span> のうち <span className="num font-bold text-ink">{Math.round(pct)}%</span>（達成率）
+        </p>
+      )}
+    </div>
+  )
+}
+
 /**
  * 体重の評価（いまの食事方針に合わせて出し分ける）。
- * - 減量：開始体重との差と変化率、「3ヶ月で5%」の参考目安、週の変化（週1%以上の減少は「速すぎないか確認」）、予定ペースとの差
+ * - 減量：開始→いま→目標の帯（何kg減ったか・あと何kg・達成率）、予定ペースとの差、このペースで続けた場合の見込み日、週の変化（週1%以上の減少は「速すぎないか確認」）、「3ヶ月で5%」の参考、計算のしかた
  * - コーフラックス：終了予定日・目標日までの期間、体重を増やさずに摂取カロリーを上げられているか
  * - 維持：維持したい体重との差
  * - フェーズ1の方針：方針の開始からの変化だけ（減量の目安は使わない）
@@ -45,14 +94,12 @@ export function WeightEvaluation({
   reviews,
   nutrition = [],
   clientId,
-  showProgress,
   reviewHref,
 }: {
   view: BodyView
   reviews: WeightReviewRow[]
   nutrition?: NutritionRow[]
   clientId: string
-  showProgress?: boolean
   reviewHref?: string
 }) {
   const g = view.goal
@@ -95,24 +142,45 @@ export function WeightEvaluation({
 
   let body: React.ReactNode
   if (g.policy === 'loss') {
+    const pr = view.progress
+    const pace = view.pace
+    const reached = !!pr && pr.remainingKg <= 0
+    const goalDate = view.plan.daysToGoal != null ? addDays(base, Math.ceil(view.plan.daysToGoal)) : null
     const guide = startW != null && cur ? lossGuide(startW, g.startDate, { weightKg: cur.value, date: cur.date }) : null
+    const behind = !!pr && pr.aheadKg <= -0.05
     body = (
       <div className="space-y-4">
-        {showProgress && view.progress && <GoalProgress view={view} clientId={clientId} />}
-        <div className="grid gap-3 md:grid-cols-3">
-          <Tile
-            label={`${name}の開始から`}
-            value={guide ? `${signed(-guide.changeKg)}kg` : '—'}
-            sub={guide ? <span className="num">{`${pctText(guide.changePct)}・開始 ${num(startW)}kg（${md(g.startDate)}）・${Math.max(1, Math.round(guide.elapsedDays / 7))}週`}</span> : '体重の記録がそろうと出ます'}
-          />
-          <Tile
-            label={`参考：3ヶ月で${GUIDE_PCT}%`}
-            value={guide ? `−${num(guide.guideKg)}kg` : '—'}
-            sub={guide ? <span className="num">{`開始 ${num(startW)}kg なら ${num(guide.guideWeightKg)}kg・3ヶ月は ${md(addDays(g.startDate, GUIDE_DAYS))} ごろ`}</span> : undefined}
-          />
-          {weekTile(true)}
-        </div>
-        <p className="text-xs text-ink-3">3ヶ月で{GUIDE_PCT}%は会議で出た参考の目安です。全員の目標ではなく、届かないことだけで遅れとは判定しません。7日と違う間隔の記録は週の変化に使いません。</p>
+        {pr ? <LossProgress pr={pr} /> : <p className="rounded-xl border border-dashed border-line-2 bg-soft px-4 py-5 text-center text-sm text-ink-2">目標体重・減量ペースと体重の記録がそろうと、進み具合が出ます</p>}
+        {pr && !reached && (
+          <div className="grid gap-3 md:grid-cols-3">
+            <Tile
+              label="予定ペースとの差"
+              value={Math.abs(pr.aheadKg) < 0.05 ? '予定どおり' : `予定より ${num(Math.abs(pr.aheadKg))}kg ${pr.aheadKg > 0 ? '先行' : '遅れ'}`}
+              sub={pace ? `${pace.name}（月−${pace.percentPerMonth}%）どおりなら、今日は ${num(pr.plannedWeightKg)}kg` : undefined}
+              tone={behind ? 'warn' : undefined}
+            />
+            <Tile
+              label="このペースで続けると"
+              value={goalDate ? `${ymdJa(goalDate, false)}ごろ` : '—'}
+              sub={goalDate ? `目標まで あと${diffDays(base, goalDate)}日（いまの体重から${pace ? `${pace.name}のペース` : ''}で計算）${pr.plannedGoalDate ? `。開始時の見込みは ${md(pr.plannedGoalDate)}` : ''}` : undefined}
+            />
+            {weekTile(true)}
+          </div>
+        )}
+        {guide && (
+          <p className="text-sm text-ink-2">
+            <span className="font-bold text-ink">参考：3ヶ月で{GUIDE_PCT}%</span>（会議の目安）…開始 <span className="num">{num(startW)}kg</span> なら <span className="num">−{num(guide.guideKg)}kg</span>（<span className="num">{num(guide.guideWeightKg)}kg</span>）、3ヶ月は <span className="num">{md(addDays(g.startDate, GUIDE_DAYS))}</span> ごろ。いまは開始から <span className="num">{pctText(guide.changePct)}</span>。届かなくても遅れとはしません
+          </p>
+        )}
+        <details className="rounded-xl bg-soft px-4 py-2.5 text-sm text-ink-2">
+          <summary className="cursor-pointer font-bold text-ink">計算のしかた</summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>達成率 ＝（開始の体重 − いまの体重）÷（開始の体重 − 目標体重）</li>
+            <li>予定の体重 ＝ 開始の体重 −（開始の体重 × 減量ペース％ ÷ 30日）× 開始からの日数</li>
+            <li>このペースで続けると ＝ 目標まであと何kg ÷（いまの体重 × 減量ペース％ ÷ 30日）日後</li>
+            <li>直近の週の変化 ＝ ちょうど7日前の記録との差。減少率 ＝（7日前 − いま）÷ 7日前 × 100。7日と違う間隔の記録は使いません</li>
+          </ul>
+        </details>
       </div>
     )
   } else if (g.policy === 'reverse') {

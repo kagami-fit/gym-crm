@@ -9,7 +9,8 @@ import { ProjectionChart } from '@/components/charts/ProjectionChart'
 import { VolumeCharts } from '@/components/charts/TrainingCharts'
 import { WeightTrend } from '@/components/charts/WeightTrend'
 import { PlanSummary } from '@/components/plan/PlanSummary'
-import { AnsLatest, ChangeHistory, ConditionSummary, MovementSummary } from '@/components/plan/Summaries'
+import { AnsGallery } from '@/components/plan/AnsGallery'
+import { ChangeHistory } from '@/components/plan/Summaries'
 import { WeightEvaluation } from '@/components/plan/WeightEvaluation'
 import { EmptyState, Section } from '@/components/ui'
 import { resolveBaseDate } from '@/lib/base-date'
@@ -18,7 +19,7 @@ import { getMealMemos } from '@/lib/data/meals'
 import { getNutritionWeeks, recentWeeks } from '@/lib/data/nutrition'
 import { getTalkNotes } from '@/lib/data/talk'
 import { getBodyView } from '@/lib/data/overview'
-import { getPlanView, getWeightReviews, latestMovements } from '@/lib/data/plan'
+import { getPlanView, getWeightReviews } from '@/lib/data/plan'
 import { getDrawing, getSessions, lastRecordsBefore } from '@/lib/data/training'
 import { addDays, mdw, ymdJa } from '@/lib/dates'
 import { policyLabel } from '@/lib/labels'
@@ -32,20 +33,20 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 }
 
 /**
- * 概要。上から、現在地 → 自律神経 → 体調の経過 → 動作 → 体重の推移と方針に合わせた評価 → 変更の履歴（2026-10-04 の整理の並び）。
+ * 概要。上から、現在地 → 自律神経の測定（前回と最新の測定票） → 体重の推移と方針に合わせた評価 → 変更の履歴。
+ * （痛み・疲労・不調の経過と動作の達成状況は、2026-10 にいったん外した。あとで見せ方を考えて戻す）
  * そのあとに会話メモ・カロリーの計算・予測（減量のときだけ）・トレーニング・食事メモ。
  */
 export default async function ClientOverviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ date?: string }> }) {
   await requireUser()
   const { id } = await params
   const base = resolveBaseDate((await searchParams).date)
-  const [view, plan, sessions, meals, talk, bodyNotes, reviews, nutrition] = await Promise.all([
+  const [view, plan, sessions, meals, talk, reviews, nutrition] = await Promise.all([
     getBodyView(id, base),
     getPlanView(id, base),
     getSessions(id, base),
     getMealMemos(id, addDays(base, -6), base),
     getTalkNotes(id, { upTo: base, take: 6 }),
-    getTalkNotes(id, { upTo: base, take: 3, kinds: ['body'] }),
     getWeightReviews(id),
     getNutritionWeeks(id, recentWeeks(base, 12)),
   ])
@@ -68,21 +69,23 @@ export default async function ClientOverviewPage({ params, searchParams }: { par
   return (
     <div className="space-y-5">
       <Section title="現在地" en="Now" aside={planLink('phase', '指導計画を開く')}>
-        <PlanSummary view={plan} />
+        <PlanSummary view={plan} clientId={id} />
       </Section>
 
-      <Section title="自律神経（最新の評価）" en="ANS" aside={planLink('ans', '測定結果を入れる')}>
-        <AnsLatest latest={plan.ansNow.latest} previous={plan.ansNow.previous} emptyHref={planHref('ans')} />
+      <Section title="自律神経の測定" en="ANS" aside={planLink('ans', plan.ans.length ? 'すべて見る・入れる' : '測定結果を入れる')}>
+        {plan.ans.length ? (
+          <div className="space-y-2">
+            <p className="text-sm text-ink-2">左が前回、右が最新です。押すと大きく開きます（「前回と並べる」で並べて見せられます）。</p>
+            <div className="max-w-3xl">
+              <AnsGallery files={plan.ans} mode="compare" />
+            </div>
+          </div>
+        ) : (
+          <EmptyState title="まだ測定結果がありません" action={{ href: planHref('ans'), label: '測定結果を入れる' }}>
+            condiView の測定票（PDF・写真）を入れると、ここに前回と並べて出ます
+          </EmptyState>
+        )}
       </Section>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <Section title="痛み・疲労・不調の経過" en="Condition" aside={planLink('condition', '体調チェック')}>
-          <ConditionSummary rows={plan.conditions} ans={plan.ans} bodyNotes={bodyNotes} emptyHref={planHref('condition')} />
-        </Section>
-        <Section title="動作の達成状況（ピラティス）" en="Movement" aside={planLink('movement', '評価を記録')}>
-          <MovementSummary latest={latestMovements(plan.movements, base)} />
-        </Section>
-      </div>
 
       <Section
         title="体重の推移と評価"
@@ -99,7 +102,7 @@ export default async function ClientOverviewPage({ params, searchParams }: { par
           ) : (
             <EmptyState title="まだ体重の記録がありません" action={{ href: `/clients/${id}/body${q}`, label: '体重を入力する' }} />
           )}
-          <WeightEvaluation view={view} reviews={reviews} nutrition={Object.values(nutrition)} clientId={id} showProgress reviewHref={`/clients/${id}/body${q}#review`} />
+          <WeightEvaluation view={view} reviews={reviews} nutrition={Object.values(nutrition)} clientId={id} reviewHref={`/clients/${id}/body${q}#review`} />
         </div>
       </Section>
 

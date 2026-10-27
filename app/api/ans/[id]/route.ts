@@ -12,7 +12,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     headers: {
       'content-type': m.mimeType,
       'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(m.fileName)}`,
-      'cache-control': 'private, no-store',
+      // 同じ測定のファイルは変わらないので、見た人の端末に1時間だけ残す（一覧の小さい表示と大きい表示で読み直さない）
+      'cache-control': 'private, max-age=3600',
       'x-content-type-options': 'nosniff',
     },
   })

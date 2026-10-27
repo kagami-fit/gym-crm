@@ -1,13 +1,13 @@
+import Link from 'next/link'
 import { AlertTriangle } from 'lucide-react'
 import { Badge } from '@/components/ui'
 import type { PlanView } from '@/lib/data/plan'
 import { diffDays, md, ymdJa, type Ymd } from '@/lib/dates'
 import { num } from '@/lib/format'
 import { DIET_POLICIES, isDietPolicy, policyLabel } from '@/lib/labels'
-import { ansShort } from '@/lib/plan'
 import { phaseDays } from '@/lib/steps'
 import { cn } from '@/lib/utils'
-import { AnsLevelChip, PhaseChip } from './Chips'
+import { PhaseChip } from './Chips'
 
 const until = (base: Ymd, d: Ymd) => {
   const n = diffDays(base, d)
@@ -25,10 +25,10 @@ function Tile({ label, value, sub, warn }: { label: string; value: React.ReactNo
 }
 
 /**
- * 現在地：いまのフェーズ・食事方針・開始日・目標日・次の見直し、自律神経の状態と確認する点。
+ * 現在地：いまのフェーズ・食事方針・開始日・目標日・次の見直し、自律神経の最新の測定日と確認する点。
  * 予定日を過ぎたもの（コーフラックスの終了予定日・見直し予定日など）があれば、上に出す。
  */
-export function PlanSummary({ view }: { view: PlanView }) {
+export function PlanSummary({ view, clientId }: { view: PlanView; clientId: string }) {
   const { phase, policy, base, ansNow } = view
   const days = phase ? phaseDays(phase, base) : null
   const week = days != null ? Math.floor((days - 1) / 7) + 1 : null
@@ -90,15 +90,20 @@ export function PlanSummary({ view }: { view: PlanView }) {
         <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           {ansNow.latest ? (
             <>
-              <span>{ansShort(ansNow.latest)}</span>
-              <span className="inline-flex gap-1">
-                <AnsLevelChip level={ansNow.latest.sympatheticLevel} />
-                <AnsLevelChip level={ansNow.latest.parasympatheticLevel} />
+              <span>
+                最新の測定 <span className="num font-bold">{md(ansNow.latest.measuredOn)}</span>
+                {ansNow.previous && (
+                  <span className="text-ink-2">
+                    （前回 <span className="num">{md(ansNow.previous.measuredOn)}</span>）
+                  </span>
+                )}
               </span>
-              <span className="num text-xs text-ink-3">{md(ansNow.latest.measuredOn)}の測定</span>
+              <Link href={`/clients/${clientId}/plan?date=${base}#ans`} className="text-sm font-bold text-brand-ink underline-offset-2 hover:underline">
+                測定票を見る
+              </Link>
             </>
           ) : (
-            <span className="text-ink-3">未評価（測定結果がまだありません）</span>
+            <span className="text-ink-3">まだ測定結果がありません</span>
           )}
         </dd>
         <dt className="text-sm font-bold text-ink-3">確認する点</dt>
