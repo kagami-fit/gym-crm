@@ -7,24 +7,8 @@ import { AnsGallery, type AnsFile } from '@/components/plan/AnsGallery'
 import { FormMessage, type ActionState } from '@/components/SubmitButton'
 import { Field, buttonClass, inputClass } from '@/components/ui'
 import { ymdJa, type Ymd } from '@/lib/dates'
+import { shrinkImage } from '@/lib/image'
 import { cn } from '@/lib/utils'
-
-/** iPad で撮った写真は大きいので、長い辺2000pxの JPEG に小さくしてから送る（読めなければそのまま送る） */
-async function shrinkImage(file: File): Promise<File> {
-  if (!file.type.startsWith('image/') || file.size < 1_200_000) return file
-  try {
-    const bmp = await createImageBitmap(file)
-    const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height))
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.round(bmp.width * scale)
-    canvas.height = Math.round(bmp.height * scale)
-    canvas.getContext('2d')?.drawImage(bmp, 0, 0, canvas.width, canvas.height)
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.85))
-    return blob ? new File([blob], `${file.name.replace(/\.[^.]+$/, '')}.jpg`, { type: 'image/jpeg' }) : file
-  } catch {
-    return file
-  }
-}
 
 /**
  * 自律神経の測定（condiView の測定票の PDF・写真）を測定日ごとに保存して、すぐ見られるように並べる。

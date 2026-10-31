@@ -9,6 +9,7 @@ const TABS = [
   { href: '/plan', label: '指導計画' },
   { href: '/body', label: '体重' },
   { href: '/training', label: 'トレーニング' },
+  { href: '/files', label: '写真・資料' },
   { href: '/talk', label: '会話メモ' },
   { href: '/meals', label: '食事メモ' },
   { href: '/profile', label: '台帳' },

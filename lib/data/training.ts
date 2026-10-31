@@ -2,14 +2,20 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { fromDbDate, toDbDate, type Ymd } from '@/lib/dates'
 import type { SessionRows, SetRow } from '@/lib/calc/training'
+import { cleanDetail, isRating, type Rating, type SetDetail } from '@/lib/log'
 import { drawingThumb, isEmptyDrawing, parseDrawing, parseThumb, type DrawingData, type DrawingThumb } from '@/lib/drawing'
+
+/** 種目の1行（ログの細かい内容つき） */
+export type LogRow = SetRow & { note: string | null; purpose: string | null; equipment: string | null; springs: string | null; detail: SetDetail[] | null; rating: Rating | null }
 
 export type SessionDetail = Omit<SessionRows, 'rows'> & {
   id: string
   memo: string | null
+  /** その回のテーマ */
+  theme: string | null
   trainerName: string | null
   hasDrawing: boolean
-  rows: Array<SetRow & { note: string | null; purpose: string | null }>
+  rows: LogRow[]
 }
 
 export async function getSessions(clientId: string, upTo?: Ymd): Promise<SessionDetail[]> {
@@ -22,20 +28,36 @@ export async function getSessions(clientId: string, upTo?: Ymd): Promise<Session
     id: s.id,
     date: fromDbDate(s.date),
     memo: s.memo,
+    theme: s.theme,
     trainerName: s.trainer?.name ?? null,
     hasDrawing: s.drawing != null,
-    rows: s.sets.map((r) => ({ bodyPart: r.bodyPart, exercise: r.exercise, weightKg: r.weightKg, reps: r.reps, sets: r.sets, note: r.note, purpose: r.purpose })),
+    rows: s.sets.map((r) => {
+      const detail = cleanDetail(r.detail)
+      return {
+        bodyPart: r.bodyPart,
+        exercise: r.exercise,
+        weightKg: r.weightKg,
+        reps: r.reps,
+        sets: r.sets,
+        note: r.note,
+        purpose: r.purpose,
+        equipment: r.equipment,
+        springs: r.springs,
+        detail: detail.length ? detail : null,
+        rating: isRating(r.rating) ? r.rating : null,
+      }
+    }),
   }))
 }
 
-export type LastRecord = { date: Ymd; weightKg: number; reps: number; sets: number }
+export type LastRecord = { date: Ymd; weightKg: number; reps: number; sets: number; detail?: SetDetail[] | null; springs?: string | null }
 
 /** 種目ごとの前回の記録（指定日より前） */
 export function lastRecordsBefore(sessions: SessionDetail[], date: Ymd, excludeSessionId?: string): Record<string, LastRecord> {
   const out: Record<string, LastRecord> = {}
   for (const s of sessions) {
     if (s.date >= date || s.id === excludeSessionId) continue
-    for (const r of s.rows) out[r.exercise] = { date: s.date, weightKg: r.weightKg, reps: r.reps, sets: r.sets }
+    for (const r of s.rows) out[r.exercise] = { date: s.date, weightKg: r.weightKg, reps: r.reps, sets: r.sets, detail: r.detail, springs: r.springs }
   }
   return out
 }

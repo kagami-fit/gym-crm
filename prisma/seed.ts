@@ -989,6 +989,57 @@ async function seedDemoKarte() {
   console.log(`karte: デモの問診票 ${rows.length}件をカルテの項目に移した`)
 }
 
+/**
+ * デモ 花子の最近2回の来店を、作り直したログ（器具・バネ・セットごと・左右・秒・できばえ・その回のテーマ・写真）で見られるようにする
+ * （SEED_DEMO=1 のとき1回だけ。AppSetting "demo:log" に印を残す。2026-10-31）。写真は「デモ用の写真」と書いた仮の画像
+ */
+async function seedDemoLog() {
+  if (process.env.SEED_DEMO !== '1') return
+  if (await prisma.appSetting.findUnique({ where: { key: 'demo:log' } })) return
+  const hanako = await prisma.client.findFirst({ where: { name: 'デモ 花子' }, select: { id: true } })
+  const [last, prev] = hanako ? await prisma.trainingSession.findMany({ where: { clientId: hanako.id }, orderBy: { date: 'desc' }, take: 2 }) : []
+  if (!last || !prev) return console.log('log: デモ 花子の来店がないため投入しない')
+
+  type D = { w?: number; r?: number; s?: number; side?: 'R' | 'L' }
+  type L = { part: string; name: string; eq: string; springs?: string; d: D[]; rating: string; note?: string }
+  const row = (l: L, order: number) => {
+    const top = l.d.reduce((a, b) => ((b.w ?? 0) > (a.w ?? 0) ? b : a), l.d[0])
+    return { order, bodyPart: l.part, exercise: l.name, equipment: l.eq, springs: l.springs ?? null, detail: l.d as Prisma.InputJsonValue, weightKg: top.w ?? 0, reps: top.r ?? 0, sets: l.d.length, rating: l.rating, note: l.note ?? null }
+  }
+  const prevRows: L[] = [
+    { part: '脚', name: 'フットワーク', eq: 'リフォーマー', springs: '2R＋1Y', d: [{ r: 10 }, { r: 10 }], rating: 'good', note: '膝が内に入りやすい' },
+    { part: '体幹', name: 'パイクアップ', eq: 'チェア', springs: 'W2', d: [{ r: 4 }, { r: 4 }], rating: 'hard', note: 'ブロックを足して実施。前ももに効くとのこと' },
+    { part: '背中', name: 'ロールダウン', eq: 'タワー', springs: 'B2', d: [{ r: 6 }, { r: 6 }], rating: 'good' },
+    { part: '体幹', name: 'サイドキック', eq: 'マット', d: [{ r: 8, side: 'R' }, { r: 5, side: 'L' }], rating: 'hard', note: '左で骨盤がぶれる' },
+    { part: '体幹', name: 'プランク', eq: 'マット', d: [{ s: 30 }, { s: 30 }], rating: 'good' },
+    { part: '脚', name: 'ワイドスタンススクワット', eq: 'フリーウェイト', d: [{ w: 20, r: 12 }, { w: 20, r: 12 }, { w: 22.5, r: 10 }], rating: 'good' },
+  ]
+  const lastRows: L[] = [
+    { part: '脚', name: 'フットワーク', eq: 'リフォーマー', springs: '2R＋1Y', d: [{ r: 10 }, { r: 10 }, { r: 10 }], rating: 'great', note: '膝とつま先の向きがそろってきた' },
+    { part: '体幹', name: 'パイクアップ', eq: 'チェア', springs: 'W2', d: [{ r: 6 }, { r: 6 }], rating: 'hard', note: '前ももの力が抜けてきた。次回も W2 で' },
+    { part: '背中', name: 'ロールダウン', eq: 'タワー', springs: 'B2', d: [{ r: 8 }, { r: 8 }], rating: 'great', note: '背中を丸める感覚がつかめた' },
+    { part: '体幹', name: 'サイドキック', eq: 'マット', d: [{ r: 10, side: 'R' }, { r: 7, side: 'L' }], rating: 'good', note: '左のぶれが小さくなった' },
+    { part: '体幹', name: 'プランク', eq: 'マット', d: [{ s: 45 }, { s: 45 }], rating: 'good' },
+    { part: '脚', name: 'ワイドスタンススクワット', eq: 'フリーウェイト', d: [{ w: 20, r: 12 }, { w: 25, r: 10 }, { w: 25, r: 10 }], rating: 'good' },
+  ]
+  for (const [s, theme, rows] of [
+    [prev, '体幹', prevRows],
+    [last, '伸展', lastRows],
+  ] as const) {
+    await prisma.trainingSet.deleteMany({ where: { sessionId: s.id } })
+    await prisma.trainingSession.update({ where: { id: s.id }, data: { theme, sets: { create: rows.map(row) } } })
+  }
+  for (const [file, title, note] of [
+    ['demo-photo-chair.jpg', 'パイクアップ（W2）', '横から撮影。足の位置の確認用'],
+    ['demo-photo-reformer.jpg', 'フットワーク（2R＋1Y）', '正面から撮影。膝の向きの確認用'],
+  ]) {
+    const data = readFileSync(new URL(`./seed-data/${file}`, import.meta.url))
+    await prisma.clientFile.create({ data: { clientId: hanako!.id, sessionId: last.id, date: last.date, kind: 'photo', title, fileName: file, mimeType: 'image/jpeg', size: data.length, data, note } })
+  }
+  await prisma.appSetting.create({ data: { key: 'demo:log', value: { at: todayYmd() } } })
+  console.log('log: デモ 花子の最近2回を、作り直したログの形にした（写真2枚）')
+}
+
 async function main() {
   await seedSettings()
   await seedExercises()
@@ -1002,6 +1053,7 @@ async function main() {
   await seedDemoPurposes()
   await seedDemoPlan(ownerId ?? demoUserId)
   await seedDemoKarte()
+  await seedDemoLog()
 }
 
 main()

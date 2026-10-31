@@ -8,15 +8,15 @@ import { md, ymdJa, type Ymd } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import { PdfView } from './PdfView'
 
-/** 自律神経の測定票（PDF・写真）1件 */
-export type AnsFile = { id: string; measuredOn: Ymd; fileName: string; mimeType: string; note: string | null }
+/** 自律神経の測定票（PDF・写真）1件。写真・資料にも使う（title は何の写真か） */
+export type AnsFile = { id: string; measuredOn: Ymd; fileName: string; mimeType: string; note: string | null; title?: string | null }
 
-const src = (id: string) => `/api/ans/${id}`
+const ansSrc = (id: string) => `/api/ans/${id}`
 
 /**
  * 測定票の中身を表示する。写真はそのまま、PDF は画像に描いて出す（小さい表示は1ページ目、大きい表示は全ページ）。
  */
-function FilePreview({ file, large }: { file: AnsFile; large?: boolean }) {
+function FilePreview({ file, large, src }: { file: AnsFile; large?: boolean; src: (id: string) => string }) {
   if (file.mimeType === 'application/pdf') {
     return (
       <div className={cn('h-full w-full bg-white', large ? 'overflow-y-auto' : 'overflow-hidden')}>
@@ -29,7 +29,7 @@ function FilePreview({ file, large }: { file: AnsFile; large?: boolean }) {
 }
 
 /** 小さい表示（押すと大きく開く） */
-function Thumb({ file, label, onOpen, className }: { file: AnsFile; label?: string; onOpen: () => void; className?: string }) {
+function Thumb({ file, label, onOpen, className, src, square }: { file: AnsFile; label?: string; onOpen: () => void; className?: string; src: (id: string) => string; square?: boolean }) {
   return (
     <button type="button" onClick={onOpen} className={cn('group block w-full overflow-hidden rounded-xl border border-line bg-soft text-left hover:ring-2 hover:ring-brand-deep active:brightness-95', className)} aria-label={`${ymdJa(file.measuredOn, false)}の測定票を大きく見る`}>
       <span className="flex items-center justify-between gap-2 border-b border-line bg-white px-3 py-2">
@@ -39,10 +39,10 @@ function Thumb({ file, label, onOpen, className }: { file: AnsFile; label?: stri
         </span>
         <Maximize2 className="size-4 flex-none text-ink-3 group-hover:text-ink" aria-hidden />
       </span>
-      <span className="block aspect-[3/4] w-full">
-        <FilePreview file={file} />
+      <span className={cn('block w-full', square ? 'aspect-square' : 'aspect-[3/4]')}>
+        <FilePreview file={file} src={src} />
       </span>
-      {file.note && <span className="block truncate border-t border-line bg-white px-3 py-1.5 text-xs text-ink-2">{file.note}</span>}
+      {(file.title || file.note) && <span className="block truncate border-t border-line bg-white px-3 py-1.5 text-xs text-ink-2">{[file.title, file.note].filter(Boolean).join('：')}</span>}
     </button>
   )
 }
@@ -52,7 +52,25 @@ function Thumb({ file, label, onOpen, className }: { file: AnsFile; label?: stri
  * compare：最新と前回の2つを並べて出す（概要・移行チェック用）／grid：すべてを並べる（指導計画用）
  * files は新しい順。footer は各測定の下に出すもの（削除ボタンなど）
  */
-export function AnsGallery({ files, mode = 'grid', footer }: { files: AnsFile[]; mode?: 'compare' | 'grid'; footer?: (f: AnsFile) => React.ReactNode }) {
+export function AnsGallery({
+  files,
+  mode = 'grid',
+  footer,
+  src = ansSrc,
+  viewerTitle = '自律神経の測定',
+  square,
+  gridClassName,
+}: {
+  files: AnsFile[]
+  mode?: 'compare' | 'grid'
+  footer?: (f: AnsFile) => React.ReactNode
+  /** ファイルを開くアドレス（写真・資料は /api/files/） */
+  src?: (id: string) => string
+  viewerTitle?: string
+  /** 小さい表示を正方形にする（写真用） */
+  square?: boolean
+  gridClassName?: string
+}) {
   const [open, setOpen] = useState<number | null>(null)
   const [pair, setPair] = useState(false)
   if (!files.length) return null
@@ -68,14 +86,14 @@ export function AnsGallery({ files, mode = 'grid', footer }: { files: AnsFile[];
           {shown.length === 1 && <p className="flex items-center justify-center rounded-xl border border-dashed border-line-2 bg-soft p-4 text-center text-sm text-ink-3">前回の測定はまだありません</p>}
           {[...shown].reverse().map((f) => {
             const i = files.indexOf(f)
-            return <Thumb key={f.id} file={f} label={i === 0 ? '最新' : '前回'} onOpen={() => (setPair(false), setOpen(i))} />
+            return <Thumb key={f.id} file={f} src={src} label={i === 0 ? '最新' : '前回'} onOpen={() => (setPair(false), setOpen(i))} />
           })}
         </div>
       ) : (
-        <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+        <ul className={cn('grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4', gridClassName)}>
           {shown.map((f, i) => (
             <li key={f.id} className="space-y-1.5">
-              <Thumb file={f} label={i === 0 ? '最新' : undefined} onOpen={() => (setPair(false), setOpen(i))} />
+              <Thumb file={f} src={src} square={square} label={mode === 'grid' && viewerTitle === '自律神経の測定' && i === 0 ? '最新' : undefined} onOpen={() => (setPair(false), setOpen(i))} />
               {footer?.(f)}
             </li>
           ))}
@@ -86,7 +104,7 @@ export function AnsGallery({ files, mode = 'grid', footer }: { files: AnsFile[];
         open={cur != null}
         onClose={() => setOpen(null)}
         variant="full"
-        title={cur ? `自律神経の測定　${ymdJa(cur.measuredOn)}` : '自律神経の測定'}
+        title={cur ? `${viewerTitle}　${ymdJa(cur.measuredOn)}${cur.title ? `　${cur.title}` : ''}` : viewerTitle}
         headerExtra={
           cur && (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -119,10 +137,10 @@ export function AnsGallery({ files, mode = 'grid', footer }: { files: AnsFile[];
                   <span className="font-black">
                     {f.id === cur.id ? (pair ? '今回' : '') : '前回'} <span className="num">{md(f.measuredOn)}</span>
                   </span>
-                  {f.note && <span className="text-ink-2">{f.note}</span>}
+                  {(f.title || f.note) && <span className="text-ink-2">{[f.title, f.note].filter(Boolean).join('：')}</span>}
                 </figcaption>
                 <div className="min-h-0 flex-1">
-                  <FilePreview file={f} large />
+                  <FilePreview file={f} large src={src} />
                 </div>
               </figure>
             ))}

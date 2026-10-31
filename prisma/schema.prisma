@@ -133,6 +133,7 @@ model Client {
   movementChecks    MovementCheck[]
   conditionChecks   ConditionCheck[]
   weightReviews     WeightReview[]
+  files             ClientFile[]
 
   @@index([status])
   @@index([kana])
@@ -210,10 +211,13 @@ model TrainingSession {
   trainerId String?
   trainer   User?           @relation(fields: [trainerId], references: [id], onDelete: SetNull)
   memo      String?
+  /// その回のテーマ（例：伸展）
+  theme     String?
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
   sets      TrainingSet[]
   drawing   SessionDrawing?
+  files     ClientFile[]
 
   @@index([clientId, date])
 }
@@ -247,7 +251,8 @@ model TalkNote {
   @@index([clientId, date])
 }
 
-/// 種目ごとの記録（1行＝重さ×回数×セット数）
+/// 種目ごとの記録。weightKg・reps・sets は「まとめ」（セットごとに入れたときは一番重いセットとセット数。計算と前回比べに使う）。
+/// セットごとの重さ・回数・秒数・左右は detail、器具・バネ（1R＋1Y など）・できばえも残せる（2026-10 手書きのログに合わせて追加）
 model TrainingSet {
   id        String          @id @default(cuid())
   sessionId String
@@ -261,6 +266,14 @@ model TrainingSet {
   note      String?
   /// その種目をやる目的（設定の「目的の選択肢」から選ぶ。名前で持つので、選択肢を消しても記録は残る）
   purpose   String?
+  /// 器具（タワー・リフォーマー・チェア・マット・スミスマシンなど。lib/log.ts の EQUIPMENT）
+  equipment String?
+  /// バネ（ピラティスマシンのスプリング）。本数＋色＋強度の略記を「＋」でつなぐ（1R＋1Y、B2 など。lib/log.ts）
+  springs   String?
+  /// セットごとの内容 [{ w: 重さkg, r: 回数, s: 秒, side: R|L }]（空なら weightKg×reps×sets）
+  detail    Json?
+  /// できばえ（great ◎ / good ○ / hard △ / ng ×）
+  rating    String?
 
   @@index([sessionId])
   @@index([exercise])
@@ -513,4 +526,29 @@ model WeightReview {
   createdAt   DateTime @default(now())
 
   @@index([clientId, date])
+}
+
+/// お客様の写真・資料。来店ごとのログにつけた写真（sessionId あり）と、カルテの原本などの資料（sessionId なし）。
+/// お客様ごとの「写真・資料」のタブにすべて日付順にまとまる
+model ClientFile {
+  id          String           @id @default(cuid())
+  clientId    String
+  client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sessionId   String?
+  session     TrainingSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  date        DateTime         @db.Date
+  /// photo 写真 / document 資料（カルテの原本など）
+  kind        String           @default("photo")
+  /// 何の写真か（例：パイクアップ B4）
+  title       String?
+  fileName    String
+  mimeType    String
+  size        Int
+  data        Bytes
+  note        String?
+  createdById String?
+  createdAt   DateTime         @default(now())
+
+  @@index([clientId, date])
+  @@index([sessionId])
 }

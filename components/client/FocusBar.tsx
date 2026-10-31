@@ -199,7 +199,7 @@ export function FocusBar({
   base: Ymd
   variant?: 'bar' | 'line'
   actions?: React.ReactNode
-  /** そのお客様のお知らせ（帯の最後の行に出す） */
+  /** そのお客様のお知らせ（帯の最後の行に出す。トレーニングのページでは帯の下に別に置く） */
   alerts?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)

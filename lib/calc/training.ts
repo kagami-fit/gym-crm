@@ -1,12 +1,14 @@
 // トレーニング記録の計算と集計（総負荷量・推定1RM・部位別・種目別）
 import { addMonthsKey, monthKey, type Ymd } from '../dates'
+import { detailVolume, type SetDetail } from '../log'
 import type { OneRmMethod } from './settings'
 
-export type SetRow = { bodyPart: string; exercise: string; weightKg: number; reps: number; sets: number }
+/** detail：セットごとの内容（あれば総負荷量はセットごとの重さ×回数の合計。weightKg・reps・sets はまとめ） */
+export type SetRow = { bodyPart: string; exercise: string; weightKg: number; reps: number; sets: number; detail?: SetDetail[] | null }
 export type SessionRows = { id?: string; date: Ymd; rows: SetRow[] }
 
-export function volume(r: Pick<SetRow, 'weightKg' | 'reps' | 'sets'>): number {
-  return r.weightKg * r.reps * r.sets
+export function volume(r: Pick<SetRow, 'weightKg' | 'reps' | 'sets' | 'detail'>): number {
+  return r.detail?.length ? detailVolume(r.detail) : r.weightKg * r.reps * r.sets
 }
 
 /** 推定1RM（最大挙上重量）。回数が多すぎて式が使えないときは null */

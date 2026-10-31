@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { Activity, ChevronDown, History, NotebookPen, PenLine, Plus } from 'lucide-react'
 import { ClientAlerts } from '@/components/alerts/ClientAlerts'
 import { FocusBar } from '@/components/client/FocusBar'
+import { SessionPhotos } from '@/components/files/FileGalleryParts'
+import { PhotoUpload } from '@/components/files/PhotoUpload'
 import { SessionEditor } from '@/components/client/SessionEditor'
 import { SessionTable } from '@/components/client/SessionTable'
 import { TalkSheetButton } from '@/components/client/TalkNotes'
@@ -14,6 +16,7 @@ import { getClientAlertBoard } from '@/lib/data/alerts'
 import { getAnsMeasurements } from '@/lib/data/ans'
 import { getHomework } from '@/lib/data/homework'
 import { getClient } from '@/lib/data/clients'
+import { getClientFiles } from '@/lib/data/files'
 import { getFocusInfo } from '@/lib/data/focus'
 import { getCalcSettings, getPurposes } from '@/lib/data/settings'
 import { getTalkNotes } from '@/lib/data/talk'
@@ -45,7 +48,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
   const sp = await searchParams
   const base = resolveBaseDate(sp.date)
   const today = todayYmd()
-  const [client, settings, sessions, exercises, focus, talk, alertBoard, homework, ans, purposes] = await Promise.all([
+  const [client, settings, sessions, exercises, focus, talk, alertBoard, homework, ans, purposes, files] = await Promise.all([
     getClient(id),
     getCalcSettings(),
     getSessions(id),
@@ -56,7 +59,11 @@ export default async function TrainingPage({ params, searchParams }: { params: P
     getHomework(id),
     getAnsMeasurements(id),
     getPurposes(),
+    getClientFiles(id),
   ])
+  // 来店ごとのログの写真
+  const photosBySession = new Map<string, typeof files>()
+  for (const f of files) if (f.sessionId) photosBySession.set(f.sessionId, [...(photosBySession.get(f.sessionId) ?? []), f])
   const ansByDate = new Map<string, typeof ans>()
   for (const m of ans) ansByDate.set(m.measuredOn, [...(ansByDate.get(m.measuredOn) ?? []), m])
   const upToBase = sessions.filter((s) => s.date <= base)
@@ -114,10 +121,11 @@ export default async function TrainingPage({ params, searchParams }: { params: P
             <TalkSheetButton {...talkProps} title={`${client.name} さんの会話メモ`} className={barBtnLight} />
           </>
         }
-        alerts={<ClientAlerts board={alertBoard} homework={homework} base={base} clientId={id} clientName={client.name} />}
       />
 
       <div className="space-y-5">
+        {/* 今日の確認（宿題・お知らせ）は上の帯に入れず、帯のすぐ下に置く（下へ動かすと流れていき、記録の画面を広く使える） */}
+        <ClientAlerts board={alertBoard} homework={homework} base={base} clientId={id} clientName={client.name} />
         {sp.saved && <Notice tone="ok">トレーニングを記録しました</Notice>}
         {sp.deleted && <Notice tone="ok">記録を削除しました</Notice>}
 
@@ -142,7 +150,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
               action={saveSessionAction.bind(null, id, editing?.id ?? null)}
               deleteAction={editing ? deleteSessionAction.bind(null, id, editing.id, editing.date) : undefined}
               sessionId={editing?.id ?? null}
-              initial={{ date: editing?.date ?? base, memo: editing?.memo ?? '', rows: editing?.rows ?? [] }}
+              initial={{ date: editing?.date ?? base, memo: editing?.memo ?? '', theme: editing?.theme ?? '', rows: editing?.rows ?? [] }}
               bodyParts={settings.bodyParts}
               exercises={exercises.map((e) => ({ bodyPart: e.bodyPart, name: e.name, purpose: e.purpose }))}
               purposes={purposes}
@@ -170,6 +178,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
                           <span className="num text-base font-bold">{mdw(s.date)}</span>
                           {isBase && <Badge tone="brand">{s.date === today ? '今日' : '基準日'}</Badge>}
                           {s.trainerName && <span className="text-xs text-ink-3">担当 {s.trainerName}</span>}
+                          {s.theme && <Badge tone="dark">テーマ：{s.theme}</Badge>}
                         </p>
                         {memoOnly ? (
                           <p className="text-sm text-ink-2">種目の記録なし</p>
@@ -197,6 +206,7 @@ export default async function TrainingPage({ params, searchParams }: { params: P
                         ))}
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        <PhotoUpload clientId={id} date={s.date} sessionId={s.id} />
                         <Link href={`/memo/${s.id}`} className={buttonClass.small}>
                           <NotebookPen className="size-4" aria-hidden />
                           {hasMemo ? '書き足す' : '手書きメモを書く'}
@@ -211,6 +221,11 @@ export default async function TrainingPage({ params, searchParams }: { params: P
                         <MemoPreview sessionId={s.id} label={mdw(s.date)} />
                       </div>
                     )}
+                    {photosBySession.get(s.id)?.length ? (
+                      <div className="px-4 pt-3">
+                        <SessionPhotos files={photosBySession.get(s.id)!} />
+                      </div>
+                    ) : null}
                     {memoOnly ? (
                       <div className="pb-3" />
                     ) : (

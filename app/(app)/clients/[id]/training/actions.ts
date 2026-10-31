@@ -2,25 +2,42 @@
 
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { Prisma } from '@prisma/client'
 import { z } from 'zod'
+import { cleanDetail, detailSummary, isRating, normalizeSprings } from '@/lib/log'
 import { prisma } from '@/lib/prisma'
 import { requireUser } from '@/lib/session'
 import { isYmd, toDbDate } from '@/lib/dates'
 import type { ActionState } from '@/components/SubmitButton'
 
-const rowSchema = z.object({
-  bodyPart: z.string().trim().min(1, '部位を選んでください').max(20),
-  exercise: z.string().trim().min(1, '種目を選ぶか入力してください').max(60),
-  weightKg: z.number().min(0, '重さは0以上にしてください').max(500, '重さが大きすぎます'),
-  reps: z.number().int('回数は整数で入れてください').min(1, '回数は1以上にしてください').max(200),
-  sets: z.number().int('セット数は整数で入れてください').min(1, 'セット数は1以上にしてください').max(30),
-  note: z.string().trim().max(100).nullable().optional(),
-  purpose: z.string().trim().max(20).nullable().optional(),
-})
+const rowSchema = z
+  .object({
+    bodyPart: z.string().trim().min(1, '部位を選んでください').max(20),
+    exercise: z.string().trim().min(1, '種目を選ぶか入力してください').max(60),
+    weightKg: z.number().min(0, '重さは0以上にしてください').max(500, '重さが大きすぎます').nullable().optional(),
+    reps: z.number().int('回数は整数で入れてください').min(0).max(500).nullable().optional(),
+    sets: z.number().int('セット数は整数で入れてください').min(0).max(30).nullable().optional(),
+    note: z.string().trim().max(200).nullable().optional(),
+    purpose: z.string().trim().max(20).nullable().optional(),
+    equipment: z.string().trim().max(20).nullable().optional(),
+    springs: z.string().trim().max(40).nullable().optional(),
+    detail: z.unknown().optional(),
+    rating: z.string().nullable().optional(),
+  })
+  .transform((r, ctx) => {
+    // セットごとに入れたときは、一番重いセットとセット数を「まとめ」にする
+    const detail = cleanDetail(r.detail)
+    if (detail.length) return { ...r, detail, ...detailSummary(detail) }
+    if (r.weightKg == null || !Number.isFinite(r.weightKg)) ctx.addIssue({ code: 'custom', message: '重さを入れてください（自重は0）' })
+    if (!r.reps || r.reps < 1) ctx.addIssue({ code: 'custom', message: '回数は1以上にしてください' })
+    if (!r.sets || r.sets < 1) ctx.addIssue({ code: 'custom', message: 'セット数は1以上にしてください' })
+    return { ...r, detail: null, weightKg: r.weightKg ?? 0, reps: r.reps ?? 0, sets: r.sets ?? 0 }
+  })
 const payloadSchema = z.object({
   date: z.string().refine(isYmd, '日付が正しくありません'),
   memo: z.string().trim().max(1000).nullable().optional(),
-  rows: z.array(rowSchema).min(1, '種目を1つ以上入れてください').max(40),
+  theme: z.string().trim().max(60).nullable().optional(),
+  rows: z.array(rowSchema).max(40),
 })
 
 export async function saveSessionAction(clientId: string, sessionId: string | null, _prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -37,18 +54,32 @@ export async function saveSessionAction(clientId: string, sessionId: string | nu
     const rowNo = issue?.path[0] === 'rows' && typeof issue.path[1] === 'number' ? `${issue.path[1] + 1}行目：` : ''
     return { ok: false, message: `${rowNo}${issue?.message ?? '入力内容を確認してください'}`, at: Date.now() }
   }
-  const { date, memo, rows } = r.data
-  const sets = rows.map((x, order) => ({ order, bodyPart: x.bodyPart, exercise: x.exercise, weightKg: x.weightKg, reps: x.reps, sets: x.sets, note: x.note || null, purpose: x.purpose || null }))
+  const { date, memo, theme, rows } = r.data
+  if (!rows.length && !theme && !memo) return { ok: false, message: '種目かテーマ・メモを入れてください', at: Date.now() }
+  const sets = rows.map((x, order) => ({
+    order,
+    bodyPart: x.bodyPart,
+    exercise: x.exercise,
+    weightKg: x.weightKg,
+    reps: x.reps,
+    sets: x.sets,
+    note: x.note || null,
+    purpose: x.purpose || null,
+    equipment: x.equipment || null,
+    springs: x.springs ? normalizeSprings(x.springs) || null : null,
+    detail: x.detail ?? Prisma.DbNull,
+    rating: isRating(x.rating) ? x.rating : null,
+  }))
 
   if (sessionId) {
     const exists = await prisma.trainingSession.findFirst({ where: { id: sessionId, clientId }, select: { id: true } })
     if (!exists) return { ok: false, message: 'この記録は見つかりませんでした', at: Date.now() }
     await prisma.$transaction([
       prisma.trainingSet.deleteMany({ where: { sessionId } }),
-      prisma.trainingSession.update({ where: { id: sessionId }, data: { date: toDbDate(date), memo: memo || null, sets: { create: sets } } }),
+      prisma.trainingSession.update({ where: { id: sessionId }, data: { date: toDbDate(date), memo: memo || null, theme: theme || null, sets: { create: sets } } }),
     ])
   } else {
-    await prisma.trainingSession.create({ data: { clientId, date: toDbDate(date), memo: memo || null, trainerId: user.id, sets: { create: sets } } })
+    await prisma.trainingSession.create({ data: { clientId, date: toDbDate(date), memo: memo || null, theme: theme || null, trainerId: user.id, sets: { create: sets } } })
   }
   revalidatePath(`/clients/${clientId}`, 'layout')
   revalidatePath('/clients')
