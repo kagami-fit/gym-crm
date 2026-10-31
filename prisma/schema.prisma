@@ -1,7 +1,7 @@
 generator client {
-  provider      = "prisma-client-js"
-  // native：開発中のMac／rhel-openssl-3.0.x：公開先（Netlify＝AWS Lambda）
-  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+  provider   = "prisma-client-js"
+  // Rust の部品を使わない形（公開先の Cloudflare Workers で動かすため）。DB へは lib/prisma.ts の pg アダプターでつなぐ
+  engineType = "client"
 }
 
 datasource db {

@@ -1,4 +1,4 @@
-import { WeightTrend } from '@/components/charts/WeightTrend'
+import { WeightTrend } from '@/components/charts/lazy'
 import { AnsPanel } from '@/components/client/AnsPanel'
 import { PhaseEditor } from '@/components/client/PhaseEditor'
 import { ThemesForm } from '@/components/client/ThemesForm'

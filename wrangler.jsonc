@@ -1,0 +1,22 @@
+{
+  // 公開デモ（Cloudflare Workers）。https://resole-gym-crm.resole-exercise-library.workers.dev
+  // 秘密の値（DATABASE_URL・BETTER_AUTH_SECRET・DEMO_USER_EMAIL・DEMO_USER_PASSWORD）は
+  // `wrangler secret` で Cloudflare に入れてあり、このファイルには書かない
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "resole-gym-crm",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "observability": { "enabled": true },
+  // データベース（Neon・米国オハイオ aws us-east-2）の近くで動かす。1ページで何度も DB に問い合わせるので、日本の近くで動かすより速い
+  "placement": { "mode": "targeted", "region": "aws:us-east-2" },
+  // 公開物を縮めて、無料プランの上限（圧縮後3MB）に余裕を持たせる
+  "minify": true,
+  "vars": {
+    "DEMO_MODE": "true",
+    "BETTER_AUTH_URL": "https://resole-gym-crm.resole-exercise-library.workers.dev",
+    // 確認用の版のURL（<版>-resole-gym-crm.resole-exercise-library.workers.dev）からもログインできるように
+    "BETTER_AUTH_TRUSTED_ORIGINS": "https://*-resole-gym-crm.resole-exercise-library.workers.dev"
+  }
+}

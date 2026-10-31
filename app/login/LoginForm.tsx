@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
-import { authClient } from '@/lib/auth-client'
+import { signInEmail } from '@/lib/auth-client'
 import { buttonClass, inputClass } from '@/components/ui'
 
 export function LoginForm({ devLogin, demoLogin }: { devLogin: boolean; demoLogin: boolean }) {
@@ -19,10 +19,10 @@ export function LoginForm({ devLogin, demoLogin }: { devLogin: boolean; demoLogi
     e.preventDefault()
     setPending(true)
     setError(null)
-    const { error } = await authClient.signIn.email({ email, password })
+    const res = await signInEmail(email, password)
     setPending(false)
-    if (error) {
-      setError(error.status === 429 ? '試行回数が多すぎます。少し時間をおいてください' : 'メールアドレスかパスワードが違います')
+    if (!res.ok) {
+      setError(res.status === 429 ? '試行回数が多すぎます。少し時間をおいてください' : 'メールアドレスかパスワードが違います')
       return
     }
     const next = params.get('next')

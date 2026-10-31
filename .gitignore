@@ -10,3 +10,6 @@ coverage
 .netlify
 *.log
 .DS_Store
+.open-next
+.wrangler
+.dev.vars

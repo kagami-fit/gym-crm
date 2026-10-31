@@ -2,6 +2,7 @@
 // 使い方: npm run user:create -- --email you@example.com --name 名前 --role owner
 // パスワードは画面に表示されない入力で2回たずねる（コマンド履歴に残さないため）
 import { createInterface } from 'node:readline'
+import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 import { hashPassword } from 'better-auth/crypto'
 
@@ -34,7 +35,7 @@ async function main() {
   if (password.length < 10) throw new Error('パスワードは10文字以上にしてください')
   if ((await askHidden('もう一度: ')) !== password) throw new Error('パスワードが一致しません')
 
-  const prisma = new PrismaClient()
+  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
   try {
     const existing = await prisma.user.findUnique({ where: { email }, include: { accounts: true } })
     const hash = await hashPassword(password)

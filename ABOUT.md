@@ -7,7 +7,7 @@ Resole のトレーナーが、お客様1人ずつの体重・目標・トレー
 分析資料・要件定義は `~/⭐Claude専用/032_gym-crm/docs/` にある（GitHub には入れていない）。
 
 GitHub：https://github.com/kagami-fit/gym-crm
-公開デモ：https://resole-gym-crm.netlify.app （リンクを知っている人が「デモを見る」からログインなしで見られる。架空のデータのみ）
+公開デモ：https://resole-gym-crm.netlify.app ／ Cloudflare 版 https://resole-gym-crm.resole-exercise-library.workers.dev （リンクを知っている人が「デモを見る」からログインなしで見られる。架空のデータのみ）
 
 ## 何ができるのか
 
@@ -98,6 +98,7 @@ GitHub：https://github.com/kagami-fit/gym-crm
 | `scripts/dev.mjs` | `npm run dev`：開発用DB（`.data/postgres`）と開発サーバーを一緒に起動（`scripts/setup.mjs` は初回セットアップ） |
 | `lib/demo.ts` ・ `app/api/demo/login` | 公開デモの「デモを見る」（Netlify の環境変数 `DEMO_MODE=true` のときだけ有効） |
 | `netlify.toml` ・ `scripts/deploy-netlify.sh` | Netlify への公開（ビルド中は手元の `.env` などを退避して、公開物に秘密の値を入れない） |
+| `wrangler.jsonc` ・ `open-next.config.ts` ・ `scripts/deploy-cloudflare.sh` | Cloudflare Workers への公開（OpenNext。同じく `.env` を退避し、値が入っていないか確かめる）。グラフ・PDF 表示はブラウザだけで読み込み（`components/charts/lazy.tsx`）、ログイン・ログアウトは軽い呼び出し（`lib/auth-client.ts`）にして、無料プランの容量（圧縮後3MB）に収めている |
 | `.env.production.local` | 公開デモのデータベース（Neon）の接続先。手元だけ・共有しない（`prod:*` のコマンドが読む） |
 | `scripts/lan-proxy.mjs` ・ `lib/dev-hosts.mjs` ・ `lib/dev-access.ts` | 開発中に同じWi-Fiの iPad から開くための中継と、開発用ログインを「この Mac だけ」に限る仕組み |
 | `scripts/create-user.ts` | ログイン用アカウントの作成（画面の「設定 → スタッフ」からも作れる） |
@@ -148,13 +149,18 @@ npm run dev            # 開発用DB＋開発サーバー → http://localhost:3
 - URL：**https://resole-gym-crm.netlify.app**。ログイン画面の「デモを見る（ログイン不要）」から入れる。GitHub のページの「Website」のリンクからも開ける
 - 中身は架空のデモ顧客だけ。「デモを見る」で入るのはスタッフ権限のデモ用アカウントなので、設定の変更・アカウント作成・顧客の削除はできない。画面の上に「デモ版です」と出る
 - **本当のお客様の情報は入れない**（リンクを知っていれば誰でも入れるため）
-- 公開先：Netlify 無料プラン（プロジェクト `resole-gym-crm`、チーム kagami-fit）。**クチコミツールと同じチームなので、無料枠（月300クレジット）を共有**する。使い切ると両方とも月末まで止まる
-- データベース：Neon 無料プラン（プロジェクト `resole-gym-crm`＝calm-dust-36433090、米国オハイオ、PostgreSQL 17）
+- 公開先は2つ（2026-10-31〜。どちらも同じ Neon のDBを見る）
+  - **Cloudflare Workers**（新）：https://resole-gym-crm.resole-exercise-library.workers.dev 。アカウント kagami.fit@gmail.com、Worker 名 `resole-gym-crm`。クレジットの制限はない。DB の近く（米国 aws:us-east-2）で動かす設定。Next を OpenNext（`@opennextjs/cloudflare`）で変換し、公開用は webpack で組み立てる（`open-next.config.ts`・`wrangler.jsonc`）。**無料プランは1回の CPU 時間が10ミリ秒までで、このアプリは1ページ130〜1,400ミリ秒使う**ので、続けて使うなら Workers Paid（月5ドル）が必要。秘密の値（DATABASE_URL・BETTER_AUTH_SECRET・DEMO_USER_*）は Cloudflare に入れてある
+  - **Netlify**（前から）：https://resole-gym-crm.netlify.app 。無料プラン（プロジェクト `resole-gym-crm`、チーム kagami-fit）。**クチコミツールと同じチームなので、無料枠（月300クレジット）を共有**する。使い切ると両方とも月末まで止まる
+- データベース：Neon 無料プラン（プロジェクト `resole-gym-crm`＝calm-dust-36433090、米国オハイオ、PostgreSQL 17）。アプリからは Prisma の pg アダプターでつなぐ（`lib/prisma.ts`。Cloudflare ではリクエストごとに接続を作る）
 - Netlify の環境変数：DATABASE_URL（プール経由）、DATABASE_URL_UNPOOLED、BETTER_AUTH_SECRET、BETTER_AUTH_URL、BETTER_AUTH_TRUSTED_ORIGINS、DEMO_MODE、DEMO_USER_EMAIL、DEMO_USER_PASSWORD（DEV_* は入れない）
 
 ```bash
-npm run deploy:preview   # 確認用のURLに公開（クレジットを使わない）
-npm run deploy:prod      # https://resole-gym-crm.netlify.app に公開（1回15クレジット）
+npm run deploy           # Cloudflare に公開（組み立て中は手元の .env を退避し、公開物に .env の値が入っていないか確かめてから公開）
+npm run deploy:preview   # Cloudflare に確認用の版だけ上げる（本番は変わらない）
+npm run cf:preview       # 組み立てたものを手元の Cloudflare の環境で動かす（http://localhost:8787。値は .dev.vars）
+npm run netlify:preview  # Netlify の確認用URLに公開（クレジットを使わない）
+npm run netlify:prod     # https://resole-gym-crm.netlify.app に公開（1回15クレジット）
 npm run prod:migrate     # 公開デモのDBのテーブルを変えたとき
 npm run prod:seed        # 公開デモのDBに初期データ（設定・種目・デモ用アカウント・デモ顧客。顧客が0人のときだけデモ顧客を入れる）
 ```
@@ -162,9 +168,9 @@ npm run prod:seed        # 公開デモのDBに初期データ（設定・種目
 ### 本番運用に切り替えるとき（本当のお客様の情報を入れる前に）
 
 1. データの保存場所を決める（今の公開デモのDBは米国。健康情報を扱うので、国内リージョンなども検討する）
-2. Netlify の環境変数から `DEMO_MODE`・`DEMO_USER_*` を消し、デモのデータを消したDBにする（`SEED_DEMO` なしで `npm run prod:seed`）
+2. 公開先（Cloudflare なら wrangler.jsonc の vars と secret、Netlify なら環境変数）から `DEMO_MODE`・`DEMO_USER_*` を消し、デモのデータを消したDBにする（`SEED_DEMO` なしで `npm run prod:seed`）
 3. `npm run prod:user -- --email ... --name ... --role owner` でオーナーを作成し、スタッフは「設定 → スタッフ」で作る
-4. `npm run deploy:prod`（健康情報を扱うため、ログイン必須のまま運用する）
+4. `npm run deploy`（Cloudflare）か `npm run netlify:prod`（健康情報を扱うため、ログイン必須のまま運用する）
 
 ## 状態
 
@@ -177,6 +183,7 @@ npm run prod:seed        # 公開デモのDBに初期データ（設定・種目
 | 初回カウンセリングのカルテ | 未着手（内容の共有待ち。`lib/questionnaire.ts` と同じ方式で追加予定） |
 | SOAP・姿勢評価・AIフィードバック・契約/回数券/予約 | 今回は入れない（要件定義で除外） |
 | 公開デモ（Netlify・Neon） | 公開済み（2026-09-25）https://resole-gym-crm.netlify.app 。架空のデータのみ、「デモを見る」でログインなしに入れる |
+| 公開デモ（Cloudflare Workers） | 公開済み（2026-10-31）https://resole-gym-crm.resole-exercise-library.workers.dev 。全ページの表示・デモのログイン・記録の保存・ログアウトを確認済み。1ページ1〜3秒（Netlify は0.5〜1.6秒）。無料プランの CPU 時間の上限を超えているので、続けるなら Workers Paid（月5ドル）。Netlify をやめるかははやとさんの判断待ち |
 | 目的・目標の固定表示／一覧の手書きメモ（半分表示）／会話メモ | 動作確認済み・公開デモに反映済み（2026-09-26。公開DBにテーブル追加とデモの会話メモを投入） |
 | お知らせ（アラート）・週ごとの食事の数字 | デモ版として公開済み（2026-09-30）。条件の値はたたき台（停滞14／21／28日など）。LINE WORKS への通知は未着手（Bot を作れば送れる） |
 | 顧客ステップ（期・月のテーマ・自律神経の測定）・宿題・帯の「今月」「食事」 | デモ版として公開済み（2026-09-30）。標準プログラムのひな形（入会時に期とテーマを自動で下書き）・自律神経の数値のグラフ・「自律神経期のみ手書き可」は京角さんの情報待ち（`~/⭐Claude専用/032_gym-crm/docs/05_必要な情報.md`） |

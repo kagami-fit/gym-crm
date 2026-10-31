@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Calculator, LogOut, Settings, Users } from 'lucide-react'
-import { authClient } from '@/lib/auth-client'
+import { signOut } from '@/lib/auth-client'
 import { cn } from '@/lib/utils'
 
 const ITEMS = [
@@ -21,7 +21,7 @@ export function AppNav({ userName, role, bell, bellSide }: { userName: string; r
   const router = useRouter()
 
   async function logout() {
-    await authClient.signOut()
+    await signOut()
     router.push('/login')
     router.refresh()
   }

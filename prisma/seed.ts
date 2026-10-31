@@ -4,6 +4,7 @@
 // - 開発用オーナー（DEV_LOGIN=true のときだけ）
 // - デモ顧客（SEED_DEMO=1 かつ顧客が0人のときだけ。日付は実行日を基準に作る）
 import { readFileSync } from 'node:fs'
+import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient, type Prisma } from '@prisma/client'
 import { hashPassword } from 'better-auth/crypto'
 import { DEFAULT_SETTINGS } from '../lib/calc/settings'
@@ -12,7 +13,7 @@ import { detailKey, type QAnswers } from '../lib/questionnaire'
 import { drawingThumb, parseDrawing } from '../lib/drawing'
 import { normalizePurposes } from '../lib/purposes'
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
 
 async function seedSettings() {
   const existing = await prisma.appSetting.findUnique({ where: { key: 'calc' } })

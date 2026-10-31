@@ -1,12 +1,15 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight, Columns2, ExternalLink, Maximize2 } from 'lucide-react'
 import { Sheet } from '@/components/Sheet'
 import { buttonClass } from '@/components/ui'
 import { md, ymdJa, type Ymd } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { PdfView } from './PdfView'
+
+// PDF の表示（pdf.js）はブラウザの中だけで読み込む（サーバーでは組み立てない＝公開先の容量を小さくする）
+const PdfView = dynamic(() => import('./PdfView').then((m) => m.PdfView), { ssr: false, loading: () => <div className="aspect-[1/1.414] w-full animate-pulse bg-soft" aria-hidden /> })
 
 /** 自律神経の測定票（PDF・写真）1件。写真・資料にも使う（title は何の写真か） */
 export type AnsFile = { id: string; measuredOn: Ymd; fileName: string; mimeType: string; note: string | null; title?: string | null }

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Notice, Value } from '@/components/ui'
-import { PfcDonut } from '@/components/charts/PfcDonut'
+import { PfcDonut } from '@/components/charts/lazy'
 import { BMR_METHODS, activityLabel } from '@/lib/calc/settings'
 import { addDays, diffDays, md, ymdJa } from '@/lib/dates'
 import { int, num, signed } from '@/lib/format'
